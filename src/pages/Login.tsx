@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
 import { useShallow } from 'zustand/shallow';
 import { authApi } from '../api/auth';
+import type { PasskeySignupResponse, RecoveryLoginResponse } from '../api/passkey';
 import { isValidEmail } from '../utils/validation';
 import {
   brandingApi,
@@ -29,9 +30,11 @@ import { CheckEmailCard } from '@/components/auth/CheckEmailCard';
 import LegalFooter from '../components/LegalFooter';
 import LegalConsent from '../components/LegalConsent';
 import LegalConsentGate from '../components/LegalConsentGate';
+import PasskeyAuth from '../components/auth/PasskeyAuth';
+import RecoveryCodesPanel from '../components/auth/RecoveryCodesPanel';
 import { useLegalConsentGate } from '../hooks/useLegalConsentGate';
 import { infoApi } from '../api/info';
-import type { LegalConsentConfig } from '../types';
+import type { AuthResponse, LegalConsentConfig } from '../types';
 import { safeLocal, safeSession } from '../utils/safeStorage';
 
 export default function Login() {
@@ -44,6 +47,7 @@ export default function Login() {
     loginWithTelegram,
     loginWithEmail,
     registerWithEmail,
+    acceptAuthResponse,
   } = useAuthStore(
     useShallow((state) => ({
       isAuthenticated: state.isAuthenticated,
@@ -51,6 +55,7 @@ export default function Login() {
       loginWithTelegram: state.loginWithTelegram,
       loginWithEmail: state.loginWithEmail,
       registerWithEmail: state.registerWithEmail,
+      acceptAuthResponse: state.acceptAuthResponse,
     })),
   );
 
@@ -75,6 +80,14 @@ export default function Login() {
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   const [forgotPasswordError, setForgotPasswordError] = useState('');
   const [showEmailForm, setShowEmailForm] = useState(true);
+
+  // Аккаунт, созданный passkey: открытые резервные коды живут ТОЛЬКО здесь, в состоянии. Сессию
+  // открываем после экрана с кодами, поэтому до «Продолжить» стор считает человека не вошедшим.
+  const [pendingSignup, setPendingSignup] = useState<PasskeySignupResponse | null>(null);
+  const [acceptingSignup, setAcceptingSignup] = useState(false);
+  const [signupError, setSignupError] = useState('');
+  // Куда вести после входа, если это не обычный возврат: вход по резервному коду ведёт в настройки.
+  const postLoginTargetRef = useRef<{ to: string; state?: unknown } | null>(null);
 
   // Гейт согласия с офертой/политикой для НОВОГО пользователя. Конфиг публичный:
   // нужен до авторизации, чтобы нарисовать чекбоксы ещё на экране входа.
@@ -204,7 +217,12 @@ export default function Login() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate(getReturnUrl(), { replace: true });
+      const target = postLoginTargetRef.current;
+      if (target) {
+        navigate(target.to, { replace: true, state: target.state });
+      } else {
+        navigate(getReturnUrl(), { replace: true });
+      }
     }
   }, [isAuthenticated, navigate, getReturnUrl]);
 
@@ -394,6 +412,34 @@ export default function Login() {
     }
   };
 
+  const handlePasskeyAuthenticated = async (response: AuthResponse) => {
+    await acceptAuthResponse(response);
+    navigate(getReturnUrl(), { replace: true });
+  };
+
+  // Вход по резервному коду — аварийный путь: сразу ведём туда, где можно добавить новый passkey.
+  const handleRecoveryLogin = async (response: RecoveryLoginResponse) => {
+    const target = { to: '/profile/accounts', state: { recoveryLogin: response.recovery_login } };
+    postLoginTargetRef.current = target;
+    await acceptAuthResponse(response);
+    navigate(target.to, { replace: true, state: target.state });
+  };
+
+  const handleSignupContinue = async () => {
+    if (!pendingSignup) return;
+    setSignupError('');
+    setAcceptingSignup(true);
+    try {
+      await acceptAuthResponse(pendingSignup);
+      setPendingSignup(null);
+      navigate(getReturnUrl(), { replace: true });
+    } catch (err) {
+      setSignupError(getApiErrorMessage(err, t('common.error')));
+    } finally {
+      setAcceptingSignup(false);
+    }
+  };
+
   const closeForgotPasswordModal = () => {
     setShowForgotPassword(false);
     setForgotPasswordEmail('');
@@ -459,8 +505,23 @@ export default function Login() {
           )}
         </div>
 
-        {/* Экран согласия: бэк ответил 428 на автоматический Telegram-вход или регистрацию */}
-        {consent.pending ? (
+        {/* Аккаунт создан passkey: резервные коды показываются один раз, сессия — после них */}
+        {pendingSignup ? (
+          <div className="card">
+            <RecoveryCodesPanel
+              codes={pendingSignup.recovery_codes}
+              appName={appName}
+              busy={acceptingSignup}
+              onContinue={handleSignupContinue}
+            />
+            {signupError && (
+              <p role="alert" className="mt-4 text-sm text-error-400">
+                {signupError}
+              </p>
+            )}
+          </div>
+        ) : /* Экран согласия: бэк ответил 428 на автоматический Telegram-вход или регистрацию */
+        consent.pending ? (
           <LegalConsentGate gate={consent} />
         ) : /* Check Email Screen */
         registeredEmail ? (
@@ -549,6 +610,15 @@ export default function Login() {
                 </div>
               </>
             )}
+
+            {/* Passkey: вход, регистрация без почты и Telegram, резервный код */}
+            <PasskeyAuth
+              onAuthenticated={handlePasskeyAuthenticated}
+              onRecoveryLogin={handleRecoveryLogin}
+              onSignedUp={setPendingSignup}
+              consent={consent}
+              disabled={isLoading}
+            />
 
             {/* Email auth section - collapsible */}
             {isEmailAuthEnabled && (
