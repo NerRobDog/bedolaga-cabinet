@@ -167,7 +167,7 @@ export default function PasskeyAuth({
   };
 
   const linkClass =
-    'text-sm text-accent-400 transition-colors hover:text-accent-300 disabled:opacity-50';
+    'py-1 text-sm text-accent-400 transition-colors hover:text-accent-300 disabled:opacity-50';
 
   return (
     <div data-testid="passkey-auth">

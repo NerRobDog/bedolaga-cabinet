@@ -44,11 +44,13 @@ function PasskeyRow({ passkey, onRename, onDelete }: PasskeyRowProps) {
     ? t('passkey.settings.deviceSynced')
     : t('passkey.settings.deviceSingle');
 
-  const meta = [
-    device,
+  // Две строки: тип устройства отдельно, даты отдельно, чтобы перенос не рвал фразу посередине.
+  const dates = [
     created ? t('passkey.settings.createdAt', { date: created }) : null,
     lastUsed ? t('passkey.settings.lastUsed', { date: lastUsed }) : t('passkey.settings.neverUsed'),
-  ].filter(Boolean);
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -119,7 +121,8 @@ function PasskeyRow({ passkey, onRename, onDelete }: PasskeyRowProps) {
           <KeyIcon className="mt-0.5 h-5 w-5 shrink-0 text-accent-400" />
           <div className="min-w-0">
             <p className="break-words font-medium text-dark-100">{passkey.name}</p>
-            <p className="mt-0.5 text-sm text-dark-400">{meta.join(' · ')}</p>
+            <p className="mt-0.5 text-sm text-dark-400">{device}</p>
+            <p className="text-sm text-dark-400">{dates}</p>
           </div>
         </div>
         {!confirmingDelete && (

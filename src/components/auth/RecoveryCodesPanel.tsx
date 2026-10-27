@@ -102,40 +102,44 @@ export default function RecoveryCodesPanel({
       <ol
         dir="ltr"
         aria-label={t('passkey.codes.listLabel')}
-        className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+        // Колонок столько, сколько влезает код целиком (19 знаков моноширинным): на узком
+        // экране одна, в карточке входа две. Перенос кода посередине читается как два кода.
+        className="grid grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] gap-2"
       >
         {codes.map((code) => (
           <li
             key={code}
-            className="select-all rounded-lg border border-dark-700 bg-dark-800/60 px-3 py-2 text-center font-mono text-sm tracking-wider text-dark-100"
+            className="select-all whitespace-nowrap rounded-lg border border-dark-700 bg-dark-800/60 px-2 py-2 text-center font-mono text-sm text-dark-100"
           >
             {code}
           </li>
         ))}
       </ol>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <button type="button" onClick={handleCopy} className="btn-secondary flex-1 gap-2 py-2.5">
-          <CopyIcon className="h-4 w-4" />
-          {t('passkey.codes.copy')}
-        </button>
-        <button
-          type="button"
-          onClick={handleDownload}
-          className="btn-secondary flex-1 gap-2 py-2.5"
+      <div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button type="button" onClick={handleCopy} className="btn-secondary flex-1 gap-2 py-2.5">
+            <CopyIcon className="h-4 w-4" />
+            {t('passkey.codes.copy')}
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="btn-secondary flex-1 gap-2 py-2.5"
+          >
+            <DownloadIcon className="h-4 w-4" />
+            {t('passkey.codes.download')}
+          </button>
+        </div>
+        {/* Всегда в DOM: скринридеры надёжно озвучивают только уже существующий live-регион. */}
+        <p
+          role="status"
+          aria-live="polite"
+          className={`mt-2 text-xs empty:mt-0 ${notice === 'copied' ? 'text-success-400' : 'text-error-400'}`}
         >
-          <DownloadIcon className="h-4 w-4" />
-          {t('passkey.codes.download')}
-        </button>
+          {notice ? t(NOTICE_KEYS[notice]) : ''}
+        </p>
       </div>
-
-      <p
-        role="status"
-        aria-live="polite"
-        className={`min-h-[1rem] text-xs ${notice === 'copied' ? 'text-success-400' : 'text-error-400'}`}
-      >
-        {notice ? t(NOTICE_KEYS[notice]) : ''}
-      </p>
 
       <label
         htmlFor="recovery-codes-ack"

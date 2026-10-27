@@ -314,8 +314,9 @@ export default function ConnectedAccounts() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   // Страница входа ведёт сюда после входа по резервному коду и кладёт флаг в state.
+  const location = useLocation();
   const recoveryLogin = Boolean(
-    (useLocation().state as { recoveryLogin?: boolean } | null)?.recoveryLogin,
+    (location.state as { recoveryLogin?: boolean } | null)?.recoveryLogin,
   );
 
   const [confirmingUnlink, setConfirmingUnlink] = useState<string | null>(null);
