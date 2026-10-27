@@ -7237,6 +7237,44 @@
     "emailMergeConfirm": "Confirm and merge",
     "emailMergeCodeInvalid": "Invalid or expired code"
   },
+  "passkey": {
+    "codes": {
+      "title": "Save your recovery codes",
+      "subtitle": "If you lose your device or passkey, these codes are the only way to sign in to your account. Each code works once.",
+      "warning": "The codes are shown only now. We do not store them in plain text and cannot show them again. Save them in a password manager or print them.",
+      "listLabel": "Recovery codes",
+      "copy": "Copy",
+      "copied": "Codes copied",
+      "copyFailed": "Could not copy. Select the codes manually or download the file.",
+      "download": "Download .txt",
+      "downloadFailed": "Could not download the file. Copy the codes manually.",
+      "ack": "I have saved the codes in a safe place",
+      "continue": "Continue",
+      "fileTitle": "Recovery codes for sign-in",
+      "fileNote": "Each code works once. Keep this file in a safe place and do not share it with anyone."
+    },
+    "errors": {
+      "lastLoginMethod": "You cannot remove your last way to sign in. Add another passkey or link Telegram, Google or email first.",
+      "limitReached": "You have reached the passkey limit. Remove one you no longer need and try again.",
+      "alreadyRegistered": "This passkey is already registered.",
+      "deviceAlreadyHasKey": "This device already has a passkey for your account.",
+      "notFound": "Passkey not found. Refresh the page.",
+      "expired": "The request timed out. Please try again.",
+      "verification": "Could not verify the passkey. Please try again.",
+      "unavailable": "Passkeys are temporarily unavailable. Please try again later.",
+      "disabled": "Passkeys have been turned off by the service administrator.",
+      "signupDisabled": "Sign-up with a passkey is currently closed.",
+      "tooMany": "Too many attempts. Please try again later.",
+      "unsupported": "Passkeys are not available in this browser or at this address. Open the site in a regular browser (Safari, Chrome).",
+      "generic": "The passkey action failed. Please try again."
+    },
+    "login": {
+      "failed": "Could not sign in with a passkey. Try again or use another sign-in method."
+    },
+    "recovery": {
+      "invalid": "That code did not work. Check it and try again."
+    }
+  },
   "theme": {
     "colors": "Theme Colors",
     "reset": "Reset",

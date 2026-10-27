@@ -6625,6 +6625,44 @@
     "emailMergeConfirm": "确认并合并",
     "emailMergeCodeInvalid": "验证码无效或已过期"
   },
+  "passkey": {
+    "codes": {
+      "title": "保存备份码",
+      "subtitle": "如果您丢失了设备或通行密钥，这些备份码是登录账户的唯一方式。每个备份码只能使用一次。",
+      "warning": "备份码仅在此处显示一次。我们不会以明文保存它们，也无法再次显示。请保存到密码管理器或打印出来。",
+      "listLabel": "备份码",
+      "copy": "复制",
+      "copied": "备份码已复制",
+      "copyFailed": "复制失败。请手动选中备份码，或下载文件。",
+      "download": "下载 .txt",
+      "downloadFailed": "下载失败。请手动复制备份码。",
+      "ack": "我已将备份码保存在安全的地方",
+      "continue": "继续",
+      "fileTitle": "登录备份码",
+      "fileNote": "每个备份码只能使用一次。请妥善保管此文件，不要向任何人展示。"
+    },
+    "errors": {
+      "lastLoginMethod": "无法删除最后一种登录方式。请先添加另一个通行密钥，或绑定 Telegram、Google 或邮箱。",
+      "limitReached": "通行密钥数量已达上限。请删除不需要的密钥后再试。",
+      "alreadyRegistered": "此通行密钥已被注册。",
+      "deviceAlreadyHasKey": "此设备上已有您账户的通行密钥。",
+      "notFound": "未找到通行密钥。请刷新页面。",
+      "expired": "等待超时，请重试。",
+      "verification": "无法验证通行密钥，请重试。",
+      "unavailable": "通行密钥暂时不可用，请稍后再试。",
+      "disabled": "管理员已关闭通行密钥功能。",
+      "signupDisabled": "目前暂不开放使用通行密钥注册。",
+      "tooMany": "尝试次数过多，请稍后再试。",
+      "unsupported": "此浏览器或当前地址不支持通行密钥。请在常规浏览器（Safari、Chrome）中打开网站。",
+      "generic": "通行密钥操作失败，请重试。"
+    },
+    "login": {
+      "failed": "无法使用通行密钥登录。请重试，或使用其他登录方式。"
+    },
+    "recovery": {
+      "invalid": "该备份码无效。请检查后重试。"
+    }
+  },
   "theme": {
     "colors": "主题颜色",
     "reset": "重置",
