@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import type { CampaignBonusInfo, RegisterResponse, User } from '../types';
+import type { AuthResponse, CampaignBonusInfo, RegisterResponse, User } from '../types';
 import { isBackendUnavailableError } from '../api/health';
 import { authApi } from '../api/auth';
 import { apiClient } from '../api/client';
@@ -64,6 +64,11 @@ interface AuthState {
     deviceId?: string | null,
   ) => Promise<void>;
   loginWithDeepLink: (token: string, campaignSlug?: string | null) => Promise<void>;
+  /**
+   * Принять готовый ответ бэка как вход: вход по passkey, по recovery-коду и аккаунт, созданный
+   * ключом (там сессию открывают только после экрана с резервными кодами).
+   */
+  acceptAuthResponse: (response: AuthResponse) => Promise<void>;
   registerWithEmail: (
     email: string,
     password: string,
@@ -393,6 +398,21 @@ export const useAuthStore = create<AuthState>()(
 
       loginWithDeepLink: async (token, campaignSlug) => {
         const response = await authApi.pollDeepLinkToken(token, campaignSlug);
+        if (!response.access_token || !response.refresh_token) {
+          throw new Error('Invalid auth response: missing tokens');
+        }
+        tokenStorage.setTokens(response.access_token, response.refresh_token);
+        set({
+          accessToken: response.access_token,
+          refreshToken: response.refresh_token,
+          user: response.user,
+          isAuthenticated: true,
+          pendingCampaignBonus: response.campaign_bonus || null,
+        });
+        await get().checkAdminStatus();
+      },
+
+      acceptAuthResponse: async (response) => {
         if (!response.access_token || !response.refresh_token) {
           throw new Error('Invalid auth response: missing tokens');
         }
