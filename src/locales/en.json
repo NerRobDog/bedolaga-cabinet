@@ -7269,10 +7269,26 @@
       "generic": "The passkey action failed. Please try again."
     },
     "login": {
-      "failed": "Could not sign in with a passkey. Try again or use another sign-in method."
+      "failed": "Could not sign in with a passkey. Try again or use another sign-in method.",
+      "button": "Sign in with passkey",
+      "busy": "Confirm on your device…"
     },
     "recovery": {
-      "invalid": "That code did not work. Check it and try again."
+      "invalid": "That code did not work. Check it and try again.",
+      "toggle": "Use a recovery code",
+      "description": "Enter one of the recovery codes you saved when you created your account. Each code works once.",
+      "label": "Recovery code",
+      "placeholder": "XXXX-XXXX-XXXX-XXXX",
+      "submit": "Sign in with code",
+      "empty": "Enter a recovery code"
+    },
+    "signup": {
+      "toggle": "Create account with passkey",
+      "description": "An account without email or Telegram: sign in with your fingerprint, face or device PIN. You will get recovery codes after creating it — you need them if you lose your device.",
+      "displayName": "Name",
+      "displayNamePlaceholder": "What should we call you (optional)",
+      "submit": "Create account",
+      "busy": "Creating account…"
     }
   },
   "theme": {

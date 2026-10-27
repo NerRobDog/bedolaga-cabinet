@@ -6657,10 +6657,26 @@
       "generic": "通行密钥操作失败，请重试。"
     },
     "login": {
-      "failed": "无法使用通行密钥登录。请重试，或使用其他登录方式。"
+      "failed": "无法使用通行密钥登录。请重试，或使用其他登录方式。",
+      "button": "使用通行密钥登录",
+      "busy": "请在您的设备上确认…"
     },
     "recovery": {
-      "invalid": "该备份码无效。请检查后重试。"
+      "invalid": "该备份码无效。请检查后重试。",
+      "toggle": "使用备份码登录",
+      "description": "请输入创建账户时保存的备份码之一。每个备份码只能使用一次。",
+      "label": "备份码",
+      "placeholder": "XXXX-XXXX-XXXX-XXXX",
+      "submit": "登录",
+      "empty": "请输入备份码"
+    },
+    "signup": {
+      "toggle": "使用通行密钥创建账户",
+      "description": "无需邮箱或 Telegram 的账户：用指纹、面容或设备 PIN 码登录。创建后您会获得备份码，丢失设备时需要用到。",
+      "displayName": "名称",
+      "displayNamePlaceholder": "怎么称呼您（可选）",
+      "submit": "创建账户",
+      "busy": "正在创建账户…"
     }
   },
   "theme": {
