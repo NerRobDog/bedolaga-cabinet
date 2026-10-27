@@ -134,7 +134,7 @@ describe('Login: аккаунт, созданный passkey', () => {
     const consent = await screen.findAllByRole('checkbox');
     // Конфиг согласия приходит отдельным запросом; ждём галочку документа.
     await waitFor(() => expect(consent.length).toBeGreaterThan(0));
-    fireEvent.click(screen.getAllByRole('checkbox').at(-1) as HTMLElement);
+    fireEvent.click([...screen.getAllByRole('checkbox')].pop() as HTMLElement);
     fireEvent.click(screen.getByRole('button', { name: 'passkey.signup.submit' }));
   }
 

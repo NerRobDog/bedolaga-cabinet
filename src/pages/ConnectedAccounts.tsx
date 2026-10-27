@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { authApi } from '../api/auth';
@@ -10,6 +10,7 @@ import { Card } from '@/components/data-display/Card';
 import { Button } from '@/components/primitives/Button';
 import { staggerContainer, staggerItem } from '@/components/motion/transitions';
 import ProviderIcon from '../components/ProviderIcon';
+import PasskeySettings from '../components/profile/PasskeySettings';
 import { getErrorDetail, saveLinkOAuthState } from '../utils/oauth';
 import { getApiErrorMessage } from '../utils/api-error';
 import { getTelegramInitData } from '../hooks/useTelegramSDK';
@@ -312,6 +313,10 @@ export default function ConnectedAccounts() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // Страница входа ведёт сюда после входа по резервному коду и кладёт флаг в state.
+  const recoveryLogin = Boolean(
+    (useLocation().state as { recoveryLogin?: boolean } | null)?.recoveryLogin,
+  );
 
   const [confirmingUnlink, setConfirmingUnlink] = useState<string | null>(null);
   const [linkingProvider, setLinkingProvider] = useState<string | null>(null);
@@ -866,6 +871,11 @@ export default function ConnectedAccounts() {
           </Card>
         </motion.div>
       ))}
+
+      {/* Passkey и резервные коды: сам скрывается, если на бэке passkey выключен */}
+      <motion.div variants={staggerItem}>
+        <PasskeySettings recoveryLogin={recoveryLogin} />
+      </motion.div>
     </motion.div>
   );
 }
