@@ -71,10 +71,14 @@ const AUTH_ENDPOINTS = [
   '/cabinet/auth/account/link/server-complete',
   '/cabinet/auth/deeplink/',
   '/cabinet/auth/login/auto',
+  // Вход и регистрация по passkey, вход по recovery-коду: токена у человека ещё нет, а 401 здесь
+  // значит «ключ не подошёл», а не «протух токен» (иначе перехватчик ушёл бы в refresh и редирект).
+  '/cabinet/auth/passkey/',
+  '/cabinet/auth/recovery/',
   '/cabinet/landing/',
 ];
 
-function isAuthEndpoint(url: string | undefined): boolean {
+export function isAuthEndpoint(url: string | undefined): boolean {
   if (!url) return false;
   return AUTH_ENDPOINTS.some((endpoint) => url.startsWith(endpoint));
 }
