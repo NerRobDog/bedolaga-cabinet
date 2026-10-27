@@ -6677,6 +6677,45 @@
       "displayNamePlaceholder": "怎么称呼您（可选）",
       "submit": "创建账户",
       "busy": "正在创建账户…"
+    },
+    "settings": {
+      "title": "通行密钥",
+      "subtitle": "使用指纹、面容或设备 PIN 码登录，无需密码。",
+      "loadError": "无法加载通行密钥列表",
+      "empty": "尚未添加通行密钥",
+      "add": "添加通行密钥",
+      "adding": "请在您的设备上确认…",
+      "limit": "已达上限：{{limit}}",
+      "deviceSynced": "可在多台设备间同步",
+      "deviceSingle": "仅限此设备",
+      "createdAt": "添加于 {{date}}",
+      "lastUsed": "上次使用 {{date}}",
+      "neverUsed": "尚未使用",
+      "rename": "重命名",
+      "renameLabel": "名称",
+      "renamePlaceholder": "例如“笔记本电脑”",
+      "added": "通行密钥已添加",
+      "renamed": "名称已保存",
+      "deleted": "通行密钥已删除",
+      "deleteConfirm": "删除“{{name}}”？之后将无法再用它登录。"
+    },
+    "recoveryPrompt": {
+      "title": "您是通过备份码登录的",
+      "text": "该备份码已用掉。请趁已登录立即添加新的通行密钥，否则下次仍需使用备份码登录。"
+    },
+    "recoveryCodes": {
+      "title": "备份码",
+      "description": "丢失存有通行密钥的设备时的备用登录方式。每个备份码只能使用一次。",
+      "remaining": "剩余 {{remaining}} / {{total}}",
+      "low": "备份码所剩无几，请生成一组新的。",
+      "none": "备份码已用完。请趁已登录生成一组新的。",
+      "generate": "生成新备份码",
+      "confirm": "旧备份码（包括未使用的）将全部失效。要用新的一组替换吗？",
+      "confirmAction": "替换备份码",
+      "newTitle": "新的备份码",
+      "newSubtitle": "旧备份码已失效。新备份码只显示一次。",
+      "done": "完成",
+      "empty": "尚无备份码。请生成一组，以防丢失设备。"
     }
   },
   "theme": {

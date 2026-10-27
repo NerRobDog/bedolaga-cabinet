@@ -7289,6 +7289,45 @@
       "displayNamePlaceholder": "What should we call you (optional)",
       "submit": "Create account",
       "busy": "Creating account…"
+    },
+    "settings": {
+      "title": "Passkeys",
+      "subtitle": "Sign in with your fingerprint, face or device PIN — no password.",
+      "loadError": "Could not load your passkeys",
+      "empty": "No passkeys yet",
+      "add": "Add a passkey",
+      "adding": "Confirm on your device…",
+      "limit": "Limit reached: {{limit}}",
+      "deviceSynced": "Synced across your devices",
+      "deviceSingle": "This device only",
+      "createdAt": "Added {{date}}",
+      "lastUsed": "Last used {{date}}",
+      "neverUsed": "Not used yet",
+      "rename": "Rename",
+      "renameLabel": "Name",
+      "renamePlaceholder": "For example, “Laptop”",
+      "added": "Passkey added",
+      "renamed": "Name saved",
+      "deleted": "Passkey removed",
+      "deleteConfirm": "Remove “{{name}}”? You will no longer be able to sign in with it."
+    },
+    "recoveryPrompt": {
+      "title": "You signed in with a recovery code",
+      "text": "That code is now spent. Add a new passkey while you are signed in, otherwise you will have to use a recovery code again next time."
+    },
+    "recoveryCodes": {
+      "title": "Recovery codes",
+      "description": "A backup way to sign in if you lose the device with your passkey. Each code works once.",
+      "remaining": "{{remaining}} of {{total}} left",
+      "low": "You are almost out of codes. Create a new set.",
+      "none": "No codes left. Create a new set while you are signed in.",
+      "generate": "Create new codes",
+      "confirm": "Your old codes will stop working, even unused ones. Replace them with a new set?",
+      "confirmAction": "Replace codes",
+      "newTitle": "New recovery codes",
+      "newSubtitle": "The old codes no longer work. The new ones are shown only once.",
+      "done": "Done",
+      "empty": "You have no recovery codes yet. Create a set in case you lose your device."
     }
   },
   "theme": {
