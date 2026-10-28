@@ -17,6 +17,7 @@ import SubscriptionCardExpired from '../components/dashboard/SubscriptionCardExp
 import { hasLegacySubscription } from '../utils/legacySubscription';
 import TrialOfferCard from '../components/dashboard/TrialOfferCard';
 import ReminderCards from '../components/dashboard/ReminderCards';
+import SecureAccessNudge from '../components/dashboard/SecureAccessNudge';
 import StatsGrid from '../components/dashboard/StatsGrid';
 import { giftApi } from '../api/gift';
 import { promoApi } from '../api/promo';
@@ -457,6 +458,9 @@ export default function Dashboard() {
           </div>
         </Link>
       )}
+
+      {/* Подсказка добавить второй способ входа (только Telegram-аккаунты) */}
+      <SecureAccessNudge />
 
       {/* Напоминания (админка → Напоминания) */}
       <ReminderCards />
