@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
     status: { enabled: boolean; signup_enabled: boolean } | undefined;
     usable: boolean;
   },
+  inTg: true,
   auth: { isAuthenticated: true, user: { id: 7, email: null } as unknown },
 }));
 
@@ -32,6 +33,7 @@ vi.mock('@/api/passkey', () => ({ passkeyApi: { list: h.listPasskeys } }));
 vi.mock('@/hooks/usePasskeyAvailability', () => ({
   usePasskeyAvailability: () => h.availability,
 }));
+vi.mock('@/hooks/useTelegramSDK', () => ({ isInTelegramWebApp: () => h.inTg }));
 vi.mock('@/store/auth', () => ({
   useAuthStore: (sel: (s: typeof h.auth) => unknown) => sel(h.auth),
 }));
@@ -64,6 +66,7 @@ describe('SecureAccessNudge', () => {
   beforeEach(() => {
     localStorage.clear();
     h.auth.isAuthenticated = true;
+    h.inTg = false;
     h.auth.user = { id: 7, email: null };
     h.availability = { status: { enabled: true, signup_enabled: false }, usable: true };
     h.getLinked.mockResolvedValue(telegramOnly);
@@ -153,6 +156,7 @@ describe('SecureAccessNudge', () => {
   });
 
   it('Mini App: shows copy link instead of the passkey button', async () => {
+    h.inTg = true;
     h.availability = { status: { enabled: true, signup_enabled: false }, usable: false };
     h.getOAuth.mockResolvedValue({ providers: [] });
     renderNudge();
@@ -160,5 +164,14 @@ describe('SecureAccessNudge', () => {
     expect(screen.queryByText('dashboard.secureAccess.addPasskey')).toBeNull();
     fireEvent.click(screen.getByText('dashboard.secureAccess.copyLink'));
     expect(h.copy).toHaveBeenCalledWith(window.location.origin);
+  });
+
+  it('regular browser without a usable authenticator: only the Google button', async () => {
+    h.availability = { status: { enabled: true, signup_enabled: false }, usable: false };
+    renderNudge();
+    expect(await screen.findByText('dashboard.secureAccess.linkGoogle')).toBeTruthy();
+    expect(screen.queryByText('dashboard.secureAccess.addPasskey')).toBeNull();
+    expect(screen.queryByText('dashboard.secureAccess.copyLink')).toBeNull();
+    expect(screen.queryByText('dashboard.secureAccess.openInBrowser')).toBeNull();
   });
 });

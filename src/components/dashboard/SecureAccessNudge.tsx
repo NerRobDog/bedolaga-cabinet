@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router';
 import { authApi } from '@/api/auth';
 import { passkeyApi } from '@/api/passkey';
 import { usePasskeyAvailability } from '@/hooks/usePasskeyAvailability';
+import { isInTelegramWebApp } from '@/hooks/useTelegramSDK';
 import { useAuthStore } from '@/store/auth';
 import { copyToClipboard } from '@/utils/clipboard';
 import { XIcon } from '@/components/icons';
@@ -70,7 +71,8 @@ export default function SecureAccessNudge() {
   const hasGoogle = oauthList.some((p) => p.name === 'google');
   const hasOAuth = oauthList.length > 0;
   const canPasskey = passkeyEnabled && usable;
-  const needBrowser = passkeyEnabled && !usable;
+  // Совет «откройте в браузере» — только внутри Mini App; на устройстве без ключей он бесполезен.
+  const needBrowser = passkeyEnabled && !usable && isInTelegramWebApp();
   if (!passkeyEnabled && !hasOAuth) return null;
 
   const dismiss = () => {
