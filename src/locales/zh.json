@@ -333,6 +333,17 @@
     "reminders": {
       "dismiss": "关闭"
     },
+    "secureAccess": {
+      "title": "添加第二种登录方式",
+      "text": "即使 Telegram 无法使用，或您使用新设备（例如没有 VPN 的笔记本电脑），通过通行密钥或 Google 仍可登录。",
+      "openInBrowser": "请在普通浏览器中打开控制台以添加通行密钥。",
+      "addPasskey": "添加通行密钥",
+      "linkGoogle": "绑定 Google",
+      "linkAccount": "绑定账号",
+      "copyLink": "复制链接",
+      "copied": "已复制",
+      "dismiss": "关闭"
+    },
     "tariff": "套餐",
     "trafficUsageTitle": "流量使用",
     "trialOffer": {

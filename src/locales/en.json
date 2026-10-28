@@ -364,6 +364,17 @@
     "reminders": {
       "dismiss": "Dismiss"
     },
+    "secureAccess": {
+      "title": "Add a second way to sign in",
+      "text": "A passkey or Google lets you log in even if Telegram is unavailable or you use a new device, such as a laptop without a VPN.",
+      "openInBrowser": "Open the cabinet in a regular browser to add a passkey.",
+      "addPasskey": "Add passkey",
+      "linkGoogle": "Link Google",
+      "linkAccount": "Link account",
+      "copyLink": "Copy link",
+      "copied": "Copied",
+      "dismiss": "Dismiss"
+    },
     "trialOffer": {
       "freeTitle": "Free Trial Available",
       "paidTitle": "Trial Subscription",

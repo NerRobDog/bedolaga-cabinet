@@ -372,6 +372,17 @@
     "reminders": {
       "dismiss": "Закрыть"
     },
+    "secureAccess": {
+      "title": "Добавьте второй способ входа",
+      "text": "Passkey или Google позволят войти, даже если Telegram недоступен или вы заходите с нового устройства, например с ноутбука без VPN.",
+      "openInBrowser": "Чтобы добавить passkey, откройте кабинет в обычном браузере.",
+      "addPasskey": "Добавить passkey",
+      "linkGoogle": "Привязать Google",
+      "linkAccount": "Привязать аккаунт",
+      "copyLink": "Скопировать ссылку",
+      "copied": "Скопировано",
+      "dismiss": "Закрыть"
+    },
     "trialOffer": {
       "freeTitle": "Бесплатный пробный период",
       "paidTitle": "Пробная подписка",

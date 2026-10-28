@@ -338,6 +338,17 @@
     "reminders": {
       "dismiss": "بستن"
     },
+    "secureAccess": {
+      "title": "یک روش ورود دوم اضافه کنید",
+      "text": "با پس‌کلید (passkey) یا Google می‌توانید حتی وقتی تلگرام در دسترس نیست یا از دستگاه جدیدی (مثلاً لپ‌تاپ بدون VPN) وارد می‌شوید، وارد حساب شوید.",
+      "openInBrowser": "برای افزودن پس‌کلید، پنل را در یک مرورگر معمولی باز کنید.",
+      "addPasskey": "افزودن پس‌کلید",
+      "linkGoogle": "اتصال Google",
+      "linkAccount": "اتصال حساب",
+      "copyLink": "کپی پیوند",
+      "copied": "کپی شد",
+      "dismiss": "بستن"
+    },
     "tariff": "تعرفه",
     "trafficUsageTitle": "مصرف ترافیک",
     "trialOffer": {
