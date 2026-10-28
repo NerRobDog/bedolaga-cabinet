@@ -83,6 +83,10 @@ export default function SecureAccessNudge() {
       // приватный режим: закрыто до перезагрузки
     }
   };
+  const bonusDays =
+    linked.link_bonus?.available === true && Number(linked.link_bonus.days) > 0
+      ? Math.floor(Number(linked.link_bonus.days))
+      : 0;
   const goAccounts = () => navigate('/profile/accounts');
   const copyLink = async () => {
     try {
@@ -113,6 +117,11 @@ export default function SecureAccessNudge() {
         {t('dashboard.secureAccess.title')}
       </h2>
       <p className="mt-1 text-xs text-dark-300">{t('dashboard.secureAccess.text')}</p>
+      {bonusDays > 0 && (
+        <p className="mt-2 text-xs font-medium text-accent-400">
+          {t('dashboard.secureAccess.linkBonus', { count: bonusDays })}
+        </p>
+      )}
       {needBrowser && (
         <p className="mt-2 text-xs text-dark-200">{t('dashboard.secureAccess.openInBrowser')}</p>
       )}

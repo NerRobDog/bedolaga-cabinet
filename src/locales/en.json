@@ -373,7 +373,9 @@
       "linkAccount": "Link account",
       "copyLink": "Copy link",
       "copied": "Copied",
-      "dismiss": "Dismiss"
+      "dismiss": "Dismiss",
+      "linkBonus_one": "Link now and get +{{count}} day of subscription",
+      "linkBonus_other": "Link now and get +{{count}} days of subscription"
     },
     "trialOffer": {
       "freeTitle": "Free Trial Available",

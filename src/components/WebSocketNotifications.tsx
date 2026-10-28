@@ -74,6 +74,18 @@ export default function WebSocketNotifications() {
         return;
       }
 
+      // Link bonus granted (+days after linking passkey / OAuth)
+      if (type === 'auth_link_bonus.granted') {
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
+        queryClient.invalidateQueries({ queryKey: ['linked-providers'] });
+        refreshUser();
+        return;
+      }
+
       // Subscription events
       if (type === 'subscription.activated') {
         // Show prominent success modal for subscription activation

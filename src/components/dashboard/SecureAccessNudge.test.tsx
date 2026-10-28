@@ -19,7 +19,10 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts && 'count' in opts ? `${key}:${String(opts.count)}` : key,
+  }),
 }));
 vi.mock('react-router', async (orig) => ({
   ...(await orig<typeof import('react-router')>()),
@@ -173,5 +176,39 @@ describe('SecureAccessNudge', () => {
     expect(screen.queryByText('dashboard.secureAccess.addPasskey')).toBeNull();
     expect(screen.queryByText('dashboard.secureAccess.copyLink')).toBeNull();
     expect(screen.queryByText('dashboard.secureAccess.openInBrowser')).toBeNull();
+  });
+
+  describe('link bonus line', () => {
+    it('shows the bonus line with days from the API', async () => {
+      h.getLinked.mockResolvedValue({ ...telegramOnly, link_bonus: { available: true, days: 5 } });
+      renderNudge();
+      expect(await screen.findByText('dashboard.secureAccess.linkBonus:5')).toBeTruthy();
+    });
+
+    it('interpolates a different number of days', async () => {
+      h.getLinked.mockResolvedValue({ ...telegramOnly, link_bonus: { available: true, days: 14 } });
+      renderNudge();
+      expect(await screen.findByText('dashboard.secureAccess.linkBonus:14')).toBeTruthy();
+    });
+
+    it('hides the line when available is false', async () => {
+      h.getLinked.mockResolvedValue({ ...telegramOnly, link_bonus: { available: false, days: 7 } });
+      renderNudge();
+      expect(await screen.findByText('dashboard.secureAccess.title')).toBeTruthy();
+      expect(screen.queryByText(/linkBonus/)).toBeNull();
+    });
+
+    it('hides the line when the field is missing (old backend)', async () => {
+      renderNudge();
+      expect(await screen.findByText('dashboard.secureAccess.title')).toBeTruthy();
+      expect(screen.queryByText(/linkBonus/)).toBeNull();
+    });
+
+    it('hides the line when days is not positive', async () => {
+      h.getLinked.mockResolvedValue({ ...telegramOnly, link_bonus: { available: true, days: 0 } });
+      renderNudge();
+      expect(await screen.findByText('dashboard.secureAccess.title')).toBeTruthy();
+      expect(screen.queryByText(/linkBonus/)).toBeNull();
+    });
   });
 });

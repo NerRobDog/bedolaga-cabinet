@@ -347,7 +347,8 @@
       "linkAccount": "اتصال حساب",
       "copyLink": "کپی پیوند",
       "copied": "کپی شد",
-      "dismiss": "بستن"
+      "dismiss": "بستن",
+      "linkBonus_other": "همین حالا متصل کنید و {{count}}+ روز اشتراک بگیرید"
     },
     "tariff": "تعرفه",
     "trafficUsageTitle": "مصرف ترافیک",

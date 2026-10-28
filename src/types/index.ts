@@ -922,8 +922,16 @@ export interface LinkedProvider {
   forgets_email?: string | null;
 }
 
+export interface LinkBonusInfo {
+  /** true только если привязка реально добавит дни к платной подписке */
+  available: boolean;
+  days: number;
+}
+
 export interface LinkedProvidersResponse {
   providers: LinkedProvider[];
+  /** Нет у старого бэкенда: отсутствие поля = бонуса нет. */
+  link_bonus?: LinkBonusInfo;
 }
 
 export interface LinkCallbackResponse {
