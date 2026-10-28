@@ -335,7 +335,7 @@
     },
     "secureAccess": {
       "title": "添加第二种登录方式",
-      "text": "即使 Telegram 无法使用，或您使用新设备（例如没有 VPN 的笔记本电脑），通过通行密钥或 Google 仍可登录。",
+      "text": "即使 Telegram 无法使用，或您使用新设备（例如没有 VPN 的笔记本电脑），通过通行密钥或 Google 仍可登录。 添加后，您可以在任何设备的任何浏览器中登录，而不仅限于通过 Telegram，例如在没有 VPN 或 Telegram 的电脑上。",
       "openInBrowser": "请在普通浏览器中打开控制台以添加通行密钥。",
       "addPasskey": "添加通行密钥",
       "linkGoogle": "绑定 Google",
