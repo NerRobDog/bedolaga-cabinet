@@ -3359,6 +3359,7 @@
         "users_channel": "Канал",
         "users_localization": "Локализация",
         "users_moderation": "Модерация",
+        "users_access": "Регистрация и вход",
         "notif_user": "Уведомления пользователей",
         "notif_admin": "Уведомления админов",
         "notif_reports": "Отчёты",

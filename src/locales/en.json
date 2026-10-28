@@ -3310,6 +3310,7 @@
         "users_channel": "Channel",
         "users_localization": "Localization",
         "users_moderation": "Moderation",
+        "users_access": "Sign-up and sign-in",
         "notif_user": "User notifications",
         "notif_admin": "Admin notifications",
         "notif_reports": "Reports",

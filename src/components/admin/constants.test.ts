@@ -22,7 +22,7 @@ describe('SETTINGS_TREE', () => {
   it('раскладывает по дереву категории, которые раньше терялись', () => {
     const mapped = getMappedCategoryKeys();
 
-    for (const category of ['CABINET', 'INFO_PAGES', 'MENU']) {
+    for (const category of ['CABINET', 'INFO_PAGES', 'MENU', 'REGISTRATION_ACCESS', 'PASSKEY']) {
       expect(mapped.has(category)).toBe(true);
     }
   });
