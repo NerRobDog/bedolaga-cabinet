@@ -187,7 +187,12 @@ export interface TrialInfo {
   requires_payment: boolean;
   price_kopeks: number;
   price_rubles: number;
+  /** Код причины лёгкого триала (см. trialReasons) или произвольная строка прежних проверок. */
   reason_unavailable: string | null;
+  /** 'lite' — короткий триал без привязанного Telegram; null/отсутствует у старых бэков. */
+  kind?: 'full' | 'lite' | null;
+  /** Точный срок в часах: у лёгкого триала duration_days округлён вниз и может быть 0. */
+  duration_hours?: number | null;
 }
 
 // Purchase options types

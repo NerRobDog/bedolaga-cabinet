@@ -5,6 +5,7 @@ import type { TrialInfo } from '../../types';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useTheme } from '../../hooks/useTheme';
 import { getGlassColors } from '../../utils/glassTheme';
+import { getTrialDurationHours } from '../../utils/trialReasons';
 import { BoltIcon, SparklesIcon } from '@/components/icons';
 
 interface TrialOfferCardProps {
@@ -28,6 +29,7 @@ export default function TrialOfferCard({
   const g = getGlassColors(isDark);
   const isFree = !trialInfo.requires_payment;
   const canAfford = balanceKopeks >= trialInfo.price_kopeks;
+  const isLite = trialInfo.kind === 'lite';
 
   return (
     <div
@@ -158,7 +160,12 @@ export default function TrialOfferCard({
       {/* Trial stats */}
       <div className="mb-7 flex justify-center gap-8">
         {[
-          { value: String(trialInfo.duration_days), label: t('subscription.trial.days') },
+          isLite
+            ? {
+                value: String(getTrialDurationHours(trialInfo)),
+                label: t('subscription.trial.hours'),
+              }
+            : { value: String(trialInfo.duration_days), label: t('subscription.trial.days') },
           {
             value: trialInfo.traffic_limit_gb === 0 ? '∞' : String(trialInfo.traffic_limit_gb),
             label: t('common.units.gb'),
@@ -176,6 +183,8 @@ export default function TrialOfferCard({
           </div>
         ))}
       </div>
+
+      {isLite && <p className="mb-5 text-xs text-dark-400">{t('subscription.trial.liteNote')}</p>}
 
       {/* Balance info for paid trial */}
       {!isFree && trialInfo.price_rubles > 0 && (

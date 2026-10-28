@@ -9,9 +9,10 @@ import { balanceApi } from '../api/balance';
 import { useTheme } from '../hooks/useTheme';
 import { getGlassColors } from '../utils/glassTheme';
 import { useAuthStore } from '../store/auth';
-import { getApiErrorMessage } from '../utils/api-error';
+import { getTrialActivationError } from '../utils/trialReasons';
 import SubscriptionListCard from '../components/subscription/SubscriptionListCard';
 import TrialOfferCard from '../components/dashboard/TrialOfferCard';
+import TrialUnavailableNotice from '../components/dashboard/TrialUnavailableNotice';
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton';
 
 function EmptyState({ onBuy }: { onBuy: () => void }) {
@@ -103,7 +104,7 @@ export default function Subscriptions() {
       refreshUser();
     },
     onError: (error: unknown) => {
-      setTrialError(getApiErrorMessage(error, t('common.error')));
+      setTrialError(getTrialActivationError(error, t, t('common.error')));
     },
   });
 
@@ -187,7 +188,10 @@ export default function Subscriptions() {
         </div>
       )}
       {hasNoSubscriptions && !trialLoading && !trialInfo?.is_available && (
-        <EmptyState onBuy={() => navigate('/subscription/purchase')} />
+        <div className="space-y-4">
+          {trialInfo && <TrialUnavailableNotice reason={trialInfo.reason_unavailable} />}
+          <EmptyState onBuy={() => navigate('/subscription/purchase')} />
+        </div>
       )}
 
       {/* Subscription grid */}

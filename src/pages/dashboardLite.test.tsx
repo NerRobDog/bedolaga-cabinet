@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { AxiosError } from 'axios';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -182,6 +183,61 @@ describe('DashboardLite', () => {
 
     action.click();
     await waitFor(() => expect(activateTrial).toHaveBeenCalled());
+  });
+
+  it('лёгкий триал: срок в часах и пояснение про Telegram', async () => {
+    getSubscription.mockResolvedValue({ has_subscription: false, subscription: null });
+    getTrialInfo.mockResolvedValue({
+      is_available: true,
+      requires_payment: false,
+      price_rubles: 0,
+      kind: 'lite',
+      duration_days: 1,
+      duration_hours: 24,
+    });
+    renderScreen();
+
+    await screen.findByRole('button', { name: 'lite.action.tryFree' });
+    expect(screen.getByText(/subscription\.trial\.hours/)).toBeTruthy();
+    expect(screen.getByText(/subscription\.trial\.liteNote/)).toBeTruthy();
+  });
+
+  it.each(['daily_limit_reached', 'ip_limit_reached', 'identity_already_used'])(
+    'недоступный триал с кодом %s объясняется понятным текстом',
+    async (code) => {
+      getSubscription.mockResolvedValue({ has_subscription: false, subscription: null });
+      getTrialInfo.mockResolvedValue({
+        is_available: false,
+        requires_payment: false,
+        price_rubles: 0,
+        reason_unavailable: code,
+      });
+      renderScreen();
+
+      expect(await screen.findByText(`subscription.trial.reason.${code}`)).toBeTruthy();
+    },
+  );
+
+  it('отказ активации 429 с кодом показывает понятный текст, а не сырой', async () => {
+    getSubscription.mockResolvedValue({ has_subscription: false, subscription: null });
+    getTrialInfo.mockResolvedValue({
+      is_available: true,
+      requires_payment: false,
+      price_rubles: 0,
+    });
+    const err = new AxiosError('refused');
+    err.response = {
+      status: 429,
+      data: { detail: { code: 'ip_limit_reached', message: 'raw backend text' } },
+    } as AxiosError['response'];
+    activateTrial.mockRejectedValueOnce(err);
+    renderScreen();
+
+    (await screen.findByRole('button', { name: 'lite.action.tryFree' })).click();
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'subscription.trial.reason.ip_limit_reached',
+    );
   });
 
   it('при доступном триале витрина тарифов остаётся строкой', async () => {

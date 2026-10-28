@@ -515,7 +515,17 @@
       "payAndActivate": "Pay & Activate",
       "topUpToActivate": "Top Up Balance",
       "insufficientBalance": "Top up your balance to activate",
-      "unavailable": "Trial is not available"
+      "unavailable": "Trial is not available",
+      "hours": "hours",
+      "hours_one": "{{count}} hour",
+      "hours_other": "{{count}} hours",
+      "liteNote": "This is a short trial. A full trial is available after you link Telegram.",
+      "reason": {
+        "daily_limit_reached": "The daily limit for free trials has been reached. Please try again tomorrow.",
+        "ip_limit_reached": "A trial has already been issued from this network today. Try again tomorrow or from another network.",
+        "identity_already_used": "A trial has already been used by this identity, so it can't be issued again.",
+        "not_available": "A trial is not available for this account."
+      }
     },
     "trialBanner": {
       "title": "Trial period active",

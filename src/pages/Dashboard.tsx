@@ -16,6 +16,7 @@ import SubscriptionCardActive from '../components/dashboard/SubscriptionCardActi
 import SubscriptionCardExpired from '../components/dashboard/SubscriptionCardExpired';
 import { hasLegacySubscription } from '../utils/legacySubscription';
 import TrialOfferCard from '../components/dashboard/TrialOfferCard';
+import TrialUnavailableNotice from '../components/dashboard/TrialUnavailableNotice';
 import ReminderCards from '../components/dashboard/ReminderCards';
 import SecureAccessNudge from '../components/dashboard/SecureAccessNudge';
 import StatsGrid from '../components/dashboard/StatsGrid';
@@ -28,7 +29,7 @@ import { API } from '../config/constants';
 import { ChevronRightIcon, StarIcon } from '@/components/icons';
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton';
 import { safeLocal } from '../utils/safeStorage';
-import { getApiErrorMessage } from '../utils/api-error';
+import { getTrialActivationError } from '../utils/trialReasons';
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -153,7 +154,7 @@ export default function Dashboard() {
       refreshUser();
     },
     onError: (error: unknown) => {
-      setTrialError(getApiErrorMessage(error, t('common.error')));
+      setTrialError(getTrialActivationError(error, t, t('common.error')));
     },
   });
 
@@ -421,6 +422,9 @@ export default function Dashboard() {
               activateTrialMutation={activateTrialMutation}
               trialError={trialError}
             />
+          )}
+          {trialInfo && !trialInfo.is_available && (
+            <TrialUnavailableNotice reason={trialInfo.reason_unavailable} />
           )}
           <Link
             to="/subscription/purchase"

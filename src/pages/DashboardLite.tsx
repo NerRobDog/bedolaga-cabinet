@@ -11,7 +11,11 @@ import { LiteRow, LiteRowGroup } from '@/components/lite/LiteRow';
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton';
 import { API } from '@/config/constants';
 import { useCurrency } from '@/hooks/useCurrency';
-import { getApiErrorMessage } from '@/utils/api-error';
+import {
+  getTrialActivationError,
+  getTrialDurationHours,
+  getTrialReasonText,
+} from '@/utils/trialReasons';
 import { formatLiteDate } from '@/utils/liteDate';
 import { liteStatus, type LiteAction } from '@/utils/liteStatus';
 
@@ -105,7 +109,7 @@ export default function DashboardLite() {
       }
     },
     onError: (error: unknown) => {
-      setTrialError(getApiErrorMessage(error, t('common.error')));
+      setTrialError(getTrialActivationError(error, t, t('common.error')));
     },
   });
 
@@ -120,6 +124,11 @@ export default function DashboardLite() {
     offersTrial &&
     Boolean(trialInfo?.requires_payment) &&
     (balance?.balance_kopeks ?? 0) < (trialInfo?.price_kopeks ?? 0);
+
+  const trialUnavailableText =
+    !hasMany && status.action === 'buy' && trialInfo && !trialInfo.is_available
+      ? getTrialReasonText(trialInfo.reason_unavailable, t)
+      : null;
 
   const actionPath: Record<LiteAction, string> = {
     connect: subscriptionId ? `/connection?sub=${subscriptionId}` : '/connection',
@@ -225,6 +234,15 @@ export default function DashboardLite() {
             {t(`lite.action.${status.action}`)}
           </Link>
         ))}
+
+      {!hasMany && offersTrial && trialInfo?.kind === 'lite' && (
+        <p className="mt-3 text-sm text-dark-400">
+          {t('subscription.trial.hours', { count: getTrialDurationHours(trialInfo) })}.{' '}
+          {t('subscription.trial.liteNote')}
+        </p>
+      )}
+
+      {trialUnavailableText && <p className="mt-3 text-sm text-dark-400">{trialUnavailableText}</p>}
 
       {trialError && (
         <p className="mt-3 text-sm text-error-400" role="alert">

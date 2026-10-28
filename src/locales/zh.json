@@ -451,7 +451,16 @@
       "unavailable": "试用不可用",
       "insufficientBalance": "余额不足以激活试用",
       "payAndActivate": "付费并激活",
-      "topUpToActivate": "充值以激活试用"
+      "topUpToActivate": "充值以激活试用",
+      "hours": "小时",
+      "hours_other": "{{count}} 小时",
+      "liteNote": "这是简短试用。绑定 Telegram 后可获得完整试用。",
+      "reason": {
+        "daily_limit_reached": "今日免费试用名额已满，请明天再试。",
+        "ip_limit_reached": "今天该网络已领取过试用，请明天再试或更换网络。",
+        "identity_already_used": "该身份已使用过试用，无法再次领取。",
+        "not_available": "此账户暂无可用试用。"
+      }
     },
     "connection": {
       "title": "连接VPN",
