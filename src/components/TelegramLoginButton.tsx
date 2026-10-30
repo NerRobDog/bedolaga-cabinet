@@ -19,11 +19,21 @@ interface TelegramLoginButtonProps {
 
 const SCRIPT_LOAD_TIMEOUT_MS = 2000;
 const DEEPLINK_POLL_INTERVAL_MS = 2500;
+// Радиус кнопки виджета: iframe не стилизуется снаружи, но принимает data-radius.
+// 12px = rounded-xl, как у соседних кнопок экрана входа (Google, passkey, «через бота»).
+const WIDGET_RADIUS_PX = 12;
+// Языки, на которых виджет Telegram гарантированно показывает подпись кнопки.
+const WIDGET_LANGS = new Set(['ru', 'en']);
 
 export default function TelegramLoginButton({ referralCode }: TelegramLoginButtonProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const widgetLang = (i18n.resolvedLanguage || i18n.language || '').split('-')[0];
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
+  const slotRef = useRef<HTMLDivElement>(null);
+  // Невидимый iframe виджета лежит поверх нашей кнопки и растягивается под её размер.
+  const [widgetScale, setWidgetScale] = useState({ x: 1, y: 1 });
+  const [widgetReady, setWidgetReady] = useState(false);
   const [oidcLoading, setOidcLoading] = useState(false);
   const [oidcError, setOidcError] = useState('');
   const [widgetError, setWidgetError] = useState('');
@@ -235,7 +245,10 @@ export default function TelegramLoginButton({ referralCode }: TelegramLoginButto
     script.src = 'https://telegram.org/js/telegram-widget.js?23';
     script.setAttribute('data-telegram-login', botUsername);
     script.setAttribute('data-size', widgetConfig.size);
-    script.setAttribute('data-radius', String(widgetConfig.radius));
+    script.setAttribute('data-radius', String(WIDGET_RADIUS_PX));
+    if (WIDGET_LANGS.has(widgetLang)) {
+      script.setAttribute('data-lang', widgetLang);
+    }
     script.setAttribute('data-userpic', String(widgetConfig.userpic));
     script.setAttribute('data-onauth', `${callbackName}(user)`);
     if (widgetConfig.request_access) {
@@ -272,10 +285,43 @@ export default function TelegramLoginButton({ referralCode }: TelegramLoginButto
     isOIDC,
     botUsername,
     widgetConfig,
+    widgetLang,
     loginWithTelegramWidget,
     navigate,
     handleScriptFailed,
   ]);
+
+  // Виджет Telegram — iframe с чужими цветами и шрифтом, снаружи его не стилизовать.
+  // Поэтому рисуем свою кнопку, а настоящий iframe кладём поверх прозрачным и
+  // масштабируем под неё: клик попадает в оригинальную кнопку, вход идёт как раньше.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: widgetConfig — контейнер монтируется только после его загрузки
+  useEffect(() => {
+    const container = containerRef.current;
+    const slot = slotRef.current;
+    if (!container || !slot || showDeepLinkUI || consent.pending || isOIDC) return;
+
+    const sync = () => {
+      const iframe = container.querySelector('iframe');
+      setWidgetReady(Boolean(iframe));
+      if (!iframe) return;
+      iframe.title = t('auth.loginWithTelegram');
+      const w = container.offsetWidth;
+      const h = container.offsetHeight;
+      if (w > 0 && h > 0) {
+        setWidgetScale({ x: slot.clientWidth / w, y: slot.clientHeight / h });
+      }
+    };
+    const resizeObserver = new ResizeObserver(sync);
+    resizeObserver.observe(container);
+    resizeObserver.observe(slot);
+    const mutationObserver = new MutationObserver(sync);
+    mutationObserver.observe(container, { childList: true, subtree: true });
+    sync();
+    return () => {
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+    };
+  }, [showDeepLinkUI, consent.pending, isOIDC, widgetConfig, t]);
 
   // Deep link auth: request token and start polling with recursive setTimeout
   const startDeepLinkAuth = useCallback(async () => {
@@ -613,7 +659,7 @@ export default function TelegramLoginButton({ referralCode }: TelegramLoginButto
               }
             }}
             disabled={oidcLoading || !scriptLoaded}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#54a9eb] px-6 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#4a96d2] disabled:opacity-50"
+            className="inline-flex min-h-10 w-full max-w-[17rem] items-center justify-center gap-2 rounded-xl bg-[#54a9eb] px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#4a96d2] disabled:opacity-50"
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
@@ -623,8 +669,26 @@ export default function TelegramLoginButton({ referralCode }: TelegramLoginButto
           {oidcError && <p className="text-xs text-error-500">{oidcError}</p>}
         </div>
       ) : (
-        <div className="flex flex-col items-center space-y-2">
-          <div ref={containerRef} className="flex justify-center" />
+        <div className="flex w-full flex-col items-center space-y-2">
+          <div
+            ref={slotRef}
+            className="group relative h-10 w-full max-w-[17rem] rounded-xl focus-within:ring-2 focus-within:ring-accent-500/60"
+          >
+            <div
+              aria-hidden="true"
+              className={`pointer-events-none flex h-full w-full items-center justify-center gap-2 rounded-xl bg-[#54a9eb] text-sm font-medium text-white shadow-sm transition-colors group-hover:bg-[#4a96d2] ${widgetReady ? '' : 'opacity-60'}`}
+            >
+              <svg className="h-5 w-5 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+              </svg>
+              {t('auth.loginWithTelegram')}
+            </div>
+            <div
+              ref={containerRef}
+              className="absolute left-0 top-0 origin-top-left opacity-0 leading-[0]"
+              style={{ transform: `scale(${widgetScale.x}, ${widgetScale.y})` }}
+            />
+          </div>
           {widgetError !== '' && (
             <p className="text-xs text-error-500">{widgetError || t('common.error')}</p>
           )}
@@ -659,13 +723,25 @@ export default function TelegramLoginButton({ referralCode }: TelegramLoginButto
       <button
         type="button"
         onClick={() => setManualDeepLink(true)}
-        className="inline-flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800/50 px-6 py-3 text-sm font-medium text-dark-200 transition-colors hover:border-dark-600 hover:bg-dark-800"
+        aria-describedby="login-with-bot-hint"
+        className="inline-flex min-h-10 w-full max-w-[17rem] items-center justify-center gap-2 rounded-xl border border-dark-700 bg-dark-800/50 px-5 py-2 text-sm font-medium text-dark-200 transition-colors hover:border-dark-600 hover:bg-dark-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500/60"
       >
-        <svg className="h-5 w-5 text-telegram-blue" viewBox="0 0 24 24" fill="currentColor">
+        <svg
+          className="h-5 w-5 flex-shrink-0 text-telegram-blue"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
           <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
         </svg>
         {t('auth.loginWithBot')}
       </button>
+      <p
+        id="login-with-bot-hint"
+        className="-mt-1 max-w-xs text-center text-xs leading-snug text-dark-400"
+      >
+        {t('auth.loginWithBotHint')}
+      </p>
     </div>
   );
 }
