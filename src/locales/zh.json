@@ -796,6 +796,11 @@
     }
   },
   "balance": {
+    "quickHint": {
+      "days_other": "{{count}} 天",
+      "note": "金额为按您的价格续订当前套餐 {{periods}} 天的费用。",
+      "noteMinusBalance": "金额为按您的价格续订当前套餐 {{periods}} 天的费用，已扣除您的余额。"
+    },
     "paymentRange": "从 {{min}} 至 {{max}}",
     "title": "余额",
     "currentBalance": "当前余额",

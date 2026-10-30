@@ -448,6 +448,15 @@ export interface PaymentMethodOption {
   description?: string | null;
 }
 
+export interface QuickAmountHint {
+  period_days: number;
+  discount_percent: number;
+  // Из суммы вычтен баланс пользователя
+  balance_deducted: boolean;
+  // Сумма подогнана под min/max способа — период не соответствует точно
+  clamped: boolean;
+}
+
 export interface PaymentMethod {
   id: string;
   name: string;
@@ -457,6 +466,8 @@ export interface PaymentMethod {
   is_available: boolean;
   options?: PaymentMethodOption[] | null;
   quick_amounts?: number[];
+  // Пояснения по индексам quick_amounts; null/нет — статические суммы без подписей
+  quick_amount_hints?: QuickAmountHint[] | null;
   // Если true — после получения payment_url кабинет сразу делает
   // window.location.href вместо показа панели с кнопкой "Открыть".
   open_url_direct?: boolean;

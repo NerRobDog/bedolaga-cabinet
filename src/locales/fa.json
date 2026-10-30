@@ -802,6 +802,12 @@
     }
   },
   "balance": {
+    "quickHint": {
+      "days_one": "{{count}} روز",
+      "days_other": "{{count}} روز",
+      "note": "مبالغ برای تمدید پلن شما به مدت {{periods}} روز با قیمت شما است.",
+      "noteMinusBalance": "مبالغ برای تمدید پلن شما به مدت {{periods}} روز با قیمت شما، پس از کسر موجودی شما است."
+    },
     "paymentRange": "از {{min}} تا {{max}}",
     "title": "موجودی",
     "currentBalance": "موجودی فعلی",

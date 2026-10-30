@@ -887,6 +887,12 @@
     }
   },
   "balance": {
+    "quickHint": {
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days",
+      "note": "Amounts cover renewing your plan for {{periods}} days at your price.",
+      "noteMinusBalance": "Amounts cover renewing your plan for {{periods}} days at your price, minus your balance."
+    },
     "paymentRange": "From {{min}} to {{max}}",
     "title": "Balance",
     "currentBalance": "Current Balance",

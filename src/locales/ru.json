@@ -918,6 +918,14 @@
     }
   },
   "balance": {
+    "quickHint": {
+      "days_one": "{{count}} день",
+      "days_few": "{{count}} дня",
+      "days_many": "{{count}} дней",
+      "days_other": "{{count}} дня",
+      "note": "Суммы — продление вашего тарифа на {{periods}} дней по вашей цене.",
+      "noteMinusBalance": "Суммы — продление вашего тарифа на {{periods}} дней по вашей цене за вычетом баланса."
+    },
     "paymentRange": "От {{min}} до {{max}}",
     "title": "Баланс",
     "currentBalance": "Текущий баланс",

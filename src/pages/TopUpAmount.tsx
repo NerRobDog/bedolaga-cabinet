@@ -389,11 +389,21 @@ export default function TopUpAmount() {
     }
   };
 
-  const quickAmounts = (
+  const quickPresets = (
     method.quick_amounts != null
-      ? method.quick_amounts.map((kopeks) => kopeks / 100)
-      : [100, 300, 500, 1000]
-  ).filter((a) => a >= minRubles && a <= maxRubles);
+      ? method.quick_amounts.map((kopeks, index) => ({
+          rub: kopeks / 100,
+          hint: method.quick_amount_hints?.[index] ?? null,
+        }))
+      : [100, 300, 500, 1000].map((rub) => ({ rub, hint: null }))
+  ).filter((p) => p.rub >= minRubles && p.rub <= maxRubles);
+  const quickAmounts = quickPresets.map((p) => p.rub);
+  const quickHintPeriods = [
+    ...new Set(
+      quickPresets.flatMap((p) => (p.hint && !p.hint.clamped ? [p.hint.period_days] : [])),
+    ),
+  ];
+  const quickDeductsBalance = quickPresets.some((p) => p.hint?.balance_deducted);
   const currencyDecimals = targetCurrency === 'IRR' || targetCurrency === 'RUB' ? 0 : 2;
   const getQuickValue = (rub: number) =>
     targetCurrency === 'IRR'
@@ -541,7 +551,7 @@ export default function TopUpAmount() {
       {/* Quick amount buttons */}
       {quickAmounts.length > 0 && (
         <motion.div variants={staggerItem} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {quickAmounts.map((a) => {
+          {quickPresets.map(({ rub: a, hint }) => {
             const val = getQuickValue(a);
             const isSelected = amount === val;
             return (
@@ -570,10 +580,26 @@ export default function TopUpAmount() {
                 >
                   {currencySymbol}
                 </span>
+                {hint && !hint.clamped && (
+                  <span className="mt-1 text-center text-[11px] leading-tight text-dark-400">
+                    {t('balance.quickHint.days', { count: hint.period_days })}
+                    {hint.discount_percent > 0 && ` · −${hint.discount_percent}%`}
+                  </span>
+                )}
               </BentoCard>
             );
           })}
         </motion.div>
+      )}
+      {quickHintPeriods.length > 0 && (
+        <motion.p variants={staggerItem} className="-mt-2 text-xs text-dark-500">
+          {t(
+            quickDeductsBalance ? 'balance.quickHint.noteMinusBalance' : 'balance.quickHint.note',
+            {
+              periods: quickHintPeriods.join('/'),
+            },
+          )}
+        </motion.p>
       )}
 
       {/* Error message */}
