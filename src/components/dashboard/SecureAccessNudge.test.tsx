@@ -149,7 +149,7 @@ describe('SecureAccessNudge', () => {
     h.availability = { status: { enabled: true, signup_enabled: false }, usable: false };
     renderNudge();
     fireEvent.click(await screen.findByText('dashboard.secureAccess.openBrowser'));
-    expect(h.openLink).toHaveBeenCalledWith(`${window.location.origin}/profile/accounts`);
+    expect(h.openLink).toHaveBeenCalledWith(`${window.location.origin}/profile/accounts?add=passkey`);
   });
 
   it('Mini App: shows copy link instead of the passkey button', async () => {

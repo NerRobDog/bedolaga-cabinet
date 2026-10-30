@@ -1,34 +1,39 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useLocation, useNavigate } from 'react-router';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
-import { authApi } from '../api/auth';
-import { brandingApi, type TelegramWidgetConfig, type EmailAuthEnabled } from '../api/branding';
-import { useToast } from '../components/Toast';
-import { Card } from '@/components/data-display/Card';
-import { Button } from '@/components/primitives/Button';
-import { staggerContainer, staggerItem } from '@/components/motion/transitions';
-import ProviderIcon from '../components/ProviderIcon';
-import PasskeySettings from '../components/profile/PasskeySettings';
-import { getErrorDetail, saveLinkOAuthState } from '../utils/oauth';
-import { getApiErrorMessage } from '../utils/api-error';
-import { getTelegramInitData } from '../hooks/useTelegramSDK';
-import { usePlatform, useIsTelegram } from '@/platform/hooks/usePlatform';
-import { useAuthStore } from '../store/auth';
-import { isValidEmail } from '../utils/validation';
-import type { LinkedProvider } from '../types';
-import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton';
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
+import { useLocation, useNavigate } from "react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
+import { authApi } from "../api/auth";
+import {
+  brandingApi,
+  type TelegramWidgetConfig,
+  type EmailAuthEnabled,
+} from "../api/branding";
+import { useToast } from "../components/Toast";
+import { Card } from "@/components/data-display/Card";
+import { Button } from "@/components/primitives/Button";
+import { staggerContainer, staggerItem } from "@/components/motion/transitions";
+import ProviderIcon from "../components/ProviderIcon";
+import PasskeySettings from "../components/profile/PasskeySettings";
+import { getErrorDetail, saveLinkOAuthState } from "../utils/oauth";
+import { getApiErrorMessage } from "../utils/api-error";
+import { getTelegramInitData } from "../hooks/useTelegramSDK";
+import { usePlatform, useIsTelegram } from "@/platform/hooks/usePlatform";
+import { useAuthStore } from "../store/auth";
+import { isValidEmail } from "../utils/validation";
+import type { LinkedProvider } from "../types";
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 
-const OAUTH_PROVIDERS = ['google', 'yandex', 'discord', 'vk'];
+const OAUTH_PROVIDERS = ["google", "yandex", "discord", "vk"];
 
-const isOAuthProvider = (provider: string): boolean => OAUTH_PROVIDERS.includes(provider);
+const isOAuthProvider = (provider: string): boolean =>
+  OAUTH_PROVIDERS.includes(provider);
 
 const isLinkableProvider = (provider: string): boolean =>
-  isOAuthProvider(provider) || provider === 'telegram' || provider === 'email';
+  isOAuthProvider(provider) || provider === "telegram" || provider === "email";
 
 // SessionStorage key for Telegram link CSRF state
-export const LINK_TELEGRAM_STATE_KEY = 'link_telegram_state';
+export const LINK_TELEGRAM_STATE_KEY = "link_telegram_state";
 
 const LINK_SCRIPT_LOAD_TIMEOUT_MS = 8000;
 
@@ -45,14 +50,18 @@ export function TelegramLinkWidget() {
   const mountedRef = useRef(true);
 
   const { data: widgetConfig } = useQuery<TelegramWidgetConfig>({
-    queryKey: ['telegram-widget-config'],
+    queryKey: ["telegram-widget-config"],
     queryFn: brandingApi.getTelegramWidgetConfig,
     staleTime: 60000,
   });
 
   const botUsername =
-    widgetConfig?.bot_username || import.meta.env.VITE_TELEGRAM_BOT_USERNAME || '';
-  const isOIDC = Boolean(widgetConfig?.oidc_enabled && widgetConfig?.oidc_client_id);
+    widgetConfig?.bot_username ||
+    import.meta.env.VITE_TELEGRAM_BOT_USERNAME ||
+    "";
+  const isOIDC = Boolean(
+    widgetConfig?.oidc_enabled && widgetConfig?.oidc_client_id,
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -66,8 +75,11 @@ export function TelegramLinkWidget() {
       if (response.merge_required && response.merge_token) {
         navigate(`/merge/${response.merge_token}`, { replace: true });
       } else {
-        queryClient.invalidateQueries({ queryKey: ['linked-providers'] });
-        showToast({ type: 'success', message: t('profile.accounts.linkSuccess') });
+        queryClient.invalidateQueries({ queryKey: ["linked-providers"] });
+        showToast({
+          type: "success",
+          message: t("profile.accounts.linkSuccess"),
+        });
       }
     },
     [navigate, queryClient, showToast, t],
@@ -83,13 +95,16 @@ export function TelegramLinkWidget() {
   const handleOIDCCallbackRef =
     useRef<(data: { id_token?: string; error?: string }) => void>(undefined);
 
-  handleOIDCCallbackRef.current = async (data: { id_token?: string; error?: string }) => {
+  handleOIDCCallbackRef.current = async (data: {
+    id_token?: string;
+    error?: string;
+  }) => {
     if (!mountedRef.current) return;
     if (data.error || !data.id_token) {
       setOidcLoading(false);
       showToast({
-        type: 'error',
-        message: data.error || t('profile.accounts.linkError'),
+        type: "error",
+        message: data.error || t("profile.accounts.linkError"),
       });
       return;
     }
@@ -100,8 +115,8 @@ export function TelegramLinkWidget() {
     } catch (err: unknown) {
       if (mountedRef.current) {
         showToast({
-          type: 'error',
-          message: getErrorDetail(err) || t('profile.accounts.linkError'),
+          type: "error",
+          message: getErrorDetail(err) || t("profile.accounts.linkError"),
         });
       }
     } finally {
@@ -113,16 +128,18 @@ export function TelegramLinkWidget() {
   useEffect(() => {
     if (!isOIDC || !widgetConfig?.oidc_client_id) return;
 
-    const scriptId = 'telegram-login-oidc-script';
+    const scriptId = "telegram-login-oidc-script";
     let script = document.getElementById(scriptId) as HTMLScriptElement | null;
 
     const initTelegramLogin = () => {
       if (window.Telegram?.Login) {
         window.Telegram.Login.init(
           {
-            client_id: Number(widgetConfig.oidc_client_id) || widgetConfig.oidc_client_id,
-            request_access: widgetConfig.request_access ? ['write'] : undefined,
-            lang: document.documentElement.lang || 'en',
+            client_id:
+              Number(widgetConfig.oidc_client_id) ||
+              widgetConfig.oidc_client_id,
+            request_access: widgetConfig.request_access ? ["write"] : undefined,
+            lang: document.documentElement.lang || "en",
           },
           (data) => handleOIDCCallbackRef.current?.(data),
         );
@@ -137,9 +154,9 @@ export function TelegramLinkWidget() {
     }, LINK_SCRIPT_LOAD_TIMEOUT_MS);
 
     if (!script) {
-      script = document.createElement('script');
+      script = document.createElement("script");
       script.id = scriptId;
-      script.src = 'https://oauth.telegram.org/js/telegram-login.js?3';
+      script.src = "https://oauth.telegram.org/js/telegram-login.js?3";
       script.async = true;
       script.onload = () => {
         clearTimeout(timeoutId);
@@ -165,7 +182,8 @@ export function TelegramLinkWidget() {
   ]);
 
   // Ref-based callback for legacy widget (avoids re-creating iframe on every render)
-  const handleWidgetAuthRef = useRef<(user: Record<string, unknown>) => void>(undefined);
+  const handleWidgetAuthRef =
+    useRef<(user: Record<string, unknown>) => void>(undefined);
   handleWidgetAuthRef.current = async (user: Record<string, unknown>) => {
     if (!mountedRef.current) return;
     try {
@@ -182,8 +200,8 @@ export function TelegramLinkWidget() {
     } catch (err: unknown) {
       if (mountedRef.current) {
         showToast({
-          type: 'error',
-          message: getErrorDetail(err) || t('profile.accounts.linkError'),
+          type: "error",
+          message: getErrorDetail(err) || t("profile.accounts.linkError"),
         });
       }
     }
@@ -198,24 +216,24 @@ export function TelegramLinkWidget() {
       container.removeChild(container.firstChild);
     }
 
-    const callbackName = '__onTelegramLinkAuth';
+    const callbackName = "__onTelegramLinkAuth";
     (window as unknown as Record<string, unknown>)[callbackName] = (
       user: Record<string, unknown>,
     ) => {
       handleWidgetAuthRef.current?.(user);
     };
 
-    const script = document.createElement('script');
-    script.src = 'https://telegram.org/js/telegram-widget.js?23';
-    script.setAttribute('data-telegram-login', botUsername);
-    script.setAttribute('data-size', 'small');
-    script.setAttribute('data-radius', '8');
-    script.setAttribute('data-onauth', `${callbackName}(user)`);
-    script.setAttribute('data-request-access', 'write');
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-widget.js?23";
+    script.setAttribute("data-telegram-login", botUsername);
+    script.setAttribute("data-size", "small");
+    script.setAttribute("data-radius", "8");
+    script.setAttribute("data-onauth", `${callbackName}(user)`);
+    script.setAttribute("data-request-access", "write");
     script.async = true;
 
     const timeoutId = setTimeout(() => {
-      if (container && !container.querySelector('iframe')) {
+      if (container && !container.querySelector("iframe")) {
         handleScriptFailed();
       }
     }, LINK_SCRIPT_LOAD_TIMEOUT_MS);
@@ -247,9 +265,12 @@ export function TelegramLinkWidget() {
     // подсказка и ссылка на бота появлялись и тут же пропадали, карточка
     // оставалась пустой (в РФ без VPN telegram.org часто не грузится).
     return (
-      <div key="telegram-fallback" className="flex max-w-[200px] flex-col items-center gap-1.5">
+      <div
+        key="telegram-fallback"
+        className="flex max-w-[200px] flex-col items-center gap-1.5"
+      >
         <p className="break-words text-center text-xs text-dark-400">
-          {t('profile.accounts.telegramLinkUnavailable')}
+          {t("profile.accounts.telegramLinkUnavailable")}
         </p>
         <a
           href={`https://t.me/${botUsername}`}
@@ -279,12 +300,18 @@ export function TelegramLinkWidget() {
           }
         }}
       >
-        {t('profile.accounts.link')}
+        {t("profile.accounts.link")}
       </Button>
     );
   }
 
-  return <div key="telegram-widget" ref={containerRef} className="flex items-center" />;
+  return (
+    <div
+      key="telegram-widget"
+      ref={containerRef}
+      className="flex items-center"
+    />
+  );
 }
 
 function LoadingSkeleton() {
@@ -327,19 +354,19 @@ export default function ConnectedAccounts() {
 
   // Email linking inline form state
   const [emailFormOpen, setEmailFormOpen] = useState(false);
-  const [emailValue, setEmailValue] = useState('');
-  const [emailPassword, setEmailPassword] = useState('');
-  const [emailConfirmPassword, setEmailConfirmPassword] = useState('');
+  const [emailValue, setEmailValue] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [emailConfirmPassword, setEmailConfirmPassword] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
   // Email-merge confirmation: the target email belongs to another account, so a
   // one-time code was mailed to it; verifying the code yields the merge token.
   const [emailMergeCodePending, setEmailMergeCodePending] = useState(false);
-  const [emailMergeCode, setEmailMergeCode] = useState('');
+  const [emailMergeCode, setEmailMergeCode] = useState("");
   const setUser = useAuthStore((state) => state.setUser);
 
   const { data: emailAuthConfig } = useQuery<EmailAuthEnabled>({
-    queryKey: ['email-auth-enabled'],
+    queryKey: ["email-auth-enabled"],
     queryFn: brandingApi.getEmailAuthEnabled,
     staleTime: 60000,
   });
@@ -354,13 +381,31 @@ export default function ConnectedAccounts() {
     };
   }, []);
 
+  // Ссылка из баннера на главной (?add=passkey): сразу показать блок passkey, а не верх страницы.
+  const passkeySectionRef = useRef<HTMLDivElement>(null);
+  const wantsPasskey =
+    new URLSearchParams(location.search).get("add") === "passkey";
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['linked-providers'],
+    queryKey: ["linked-providers"],
     queryFn: () => authApi.getLinkedProviders(),
     refetchOnWindowFocus: true,
     // Poll every 5s while waiting for external browser OAuth to complete
     refetchInterval: waitingExternalLink ? 5000 : false,
   });
+
+  useEffect(() => {
+    if (!wantsPasskey || isLoading) return;
+    // Блок passkey подгружает свой статус и анимируется: даём ему встать на место.
+    const timer = setTimeout(
+      () =>
+        passkeySectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        }),
+      400,
+    );
+    return () => clearTimeout(timer);
+  }, [wantsPasskey, isLoading]);
 
   // Stop polling after 90 seconds with timeout feedback
   useEffect(() => {
@@ -369,8 +414,11 @@ export default function ConnectedAccounts() {
       setWaitingExternalLink(false);
       pendingLinkProvider.current = null;
       // Final refresh in case link succeeded during the last polling interval
-      queryClient.invalidateQueries({ queryKey: ['linked-providers'] });
-      showToast({ type: 'warning', message: t('profile.accounts.pollingTimeout') });
+      queryClient.invalidateQueries({ queryKey: ["linked-providers"] });
+      showToast({
+        type: "warning",
+        message: t("profile.accounts.pollingTimeout"),
+      });
     }, 90_000);
     return () => clearTimeout(timeout);
   }, [waitingExternalLink, showToast, t, queryClient]);
@@ -378,27 +426,32 @@ export default function ConnectedAccounts() {
   // Detect successful external link: stop polling when the target provider becomes linked
   useEffect(() => {
     if (!waitingExternalLink || !data || !pendingLinkProvider.current) return;
-    const target = data.providers.find((p) => p.provider === pendingLinkProvider.current);
+    const target = data.providers.find(
+      (p) => p.provider === pendingLinkProvider.current,
+    );
     if (target?.linked) {
       setWaitingExternalLink(false);
       pendingLinkProvider.current = null;
-      showToast({ type: 'success', message: t('profile.accounts.linkSuccess') });
+      showToast({
+        type: "success",
+        message: t("profile.accounts.linkSuccess"),
+      });
     }
   }, [data, waitingExternalLink, showToast, t]);
 
   const unlinkMutation = useMutation({
     mutationFn: (provider: string) => authApi.unlinkProvider(provider),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['linked-providers'] });
+      queryClient.invalidateQueries({ queryKey: ["linked-providers"] });
       showToast({
-        type: 'success',
-        message: t('profile.accounts.unlinkSuccess'),
+        type: "success",
+        message: t("profile.accounts.unlinkSuccess"),
       });
     },
     onError: () => {
       showToast({
-        type: 'error',
-        message: t('profile.accounts.unlinkError'),
+        type: "error",
+        message: t("profile.accounts.unlinkError"),
       });
     },
     onSettled: () => {
@@ -416,37 +469,40 @@ export default function ConnectedAccounts() {
       }
       // The email belongs to another account: a one-time code was mailed to it.
       // Switch to the code step; verifying it yields the merge token.
-      if (response.merge_required && response.merge_verification === 'email_code') {
+      if (
+        response.merge_required &&
+        response.merge_verification === "email_code"
+      ) {
         setEmailMergeCodePending(true);
-        setEmailMergeCode('');
-        setEmailSuccess(t('profile.emailMergeCodeSent'));
+        setEmailMergeCode("");
+        setEmailSuccess(t("profile.emailMergeCodeSent"));
         setEmailError(null);
         return;
       }
-      setEmailSuccess(t('profile.emailSent'));
+      setEmailSuccess(t("profile.emailSent"));
       setEmailError(null);
-      setEmailValue('');
-      setEmailPassword('');
-      setEmailConfirmPassword('');
+      setEmailValue("");
+      setEmailPassword("");
+      setEmailConfirmPassword("");
       const updatedUser = await authApi.getMe();
       setUser(updatedUser);
-      queryClient.invalidateQueries({ queryKey: ['linked-providers'] });
+      queryClient.invalidateQueries({ queryKey: ["linked-providers"] });
       // Note: auth user lives in the zustand store, not in React Query —
       // the explicit setUser above IS the refresh. No ['user'] query exists.
     },
     onError: (err: unknown) => {
-      const detail = getApiErrorMessage(err, '');
+      const detail = getApiErrorMessage(err, "");
       // The email belongs to another account and merging it requires proving
       // ownership: the backend asks for THAT account's password (account-takeover
       // fix). Guide the user to enter it rather than showing a dead-end error.
-      if (detail.includes('merge')) {
-        setEmailError(t('profile.emailMergePasswordRequired'));
-      } else if (detail.includes('already registered')) {
-        setEmailError(t('profile.emailAlreadyRegistered'));
-      } else if (detail.includes('already have a verified email')) {
-        setEmailError(t('profile.alreadyHaveEmail'));
+      if (detail.includes("merge")) {
+        setEmailError(t("profile.emailMergePasswordRequired"));
+      } else if (detail.includes("already registered")) {
+        setEmailError(t("profile.emailAlreadyRegistered"));
+      } else if (detail.includes("already have a verified email")) {
+        setEmailError(t("profile.alreadyHaveEmail"));
       } else {
-        setEmailError(detail || t('common.error'));
+        setEmailError(detail || t("common.error"));
       }
       setEmailSuccess(null);
     },
@@ -460,7 +516,9 @@ export default function ConnectedAccounts() {
       }
     },
     onError: (err: unknown) => {
-      setEmailError(getApiErrorMessage(err, t('profile.emailMergeCodeInvalid')));
+      setEmailError(
+        getApiErrorMessage(err, t("profile.emailMergeCodeInvalid")),
+      );
     },
   });
 
@@ -469,7 +527,7 @@ export default function ConnectedAccounts() {
     setEmailError(null);
     const code = emailMergeCode.trim();
     if (!/^\d{6}$/.test(code)) {
-      setEmailError(t('profile.emailMergeCodeInvalid'));
+      setEmailError(t("profile.emailMergeCodeInvalid"));
       return;
     }
     verifyEmailMergeMutation.mutate(code);
@@ -477,7 +535,7 @@ export default function ConnectedAccounts() {
 
   const cancelEmailMerge = () => {
     setEmailMergeCodePending(false);
-    setEmailMergeCode('');
+    setEmailMergeCode("");
     setEmailError(null);
     setEmailSuccess(null);
   };
@@ -488,18 +546,21 @@ export default function ConnectedAccounts() {
     setEmailSuccess(null);
 
     if (!emailValue.trim() || !isValidEmail(emailValue.trim())) {
-      setEmailError(t('profile.invalidEmail'));
+      setEmailError(t("profile.invalidEmail"));
       return;
     }
     if (!emailPassword || emailPassword.length < 8) {
-      setEmailError(t('profile.passwordMinLength'));
+      setEmailError(t("profile.passwordMinLength"));
       return;
     }
     if (emailPassword !== emailConfirmPassword) {
-      setEmailError(t('profile.passwordsMismatch'));
+      setEmailError(t("profile.passwordsMismatch"));
       return;
     }
-    registerEmailMutation.mutate({ email: emailValue, password: emailPassword });
+    registerEmailMutation.mutate({
+      email: emailValue,
+      password: emailPassword,
+    });
   };
 
   const canUnlink = (provider: LinkedProvider): boolean => {
@@ -515,7 +576,7 @@ export default function ConnectedAccounts() {
     try {
       const { authorize_url, state } = await authApi.linkProviderInit(provider);
       if (!authorize_url || !state) {
-        throw new Error('Invalid response from server');
+        throw new Error("Invalid response from server");
       }
 
       // Validate redirect URL — only allow HTTPS to prevent open redirect
@@ -523,10 +584,10 @@ export default function ConnectedAccounts() {
       try {
         parsed = new URL(authorize_url);
       } catch {
-        throw new Error('Invalid OAuth redirect URL');
+        throw new Error("Invalid OAuth redirect URL");
       }
-      if (parsed.protocol !== 'https:') {
-        throw new Error('Invalid OAuth redirect URL');
+      if (parsed.protocol !== "https:") {
+        throw new Error("Invalid OAuth redirect URL");
       }
 
       if (inTelegram) {
@@ -539,21 +600,21 @@ export default function ConnectedAccounts() {
         // Start polling for linked providers (external browser has no way to notify Mini App)
         setWaitingExternalLink(true);
         showToast({
-          type: 'info',
-          message: t('profile.accounts.continueInBrowser'),
+          type: "info",
+          message: t("profile.accounts.continueInBrowser"),
         });
       } else {
         // Regular browser: navigate within the same tab.
         // Save state in sessionStorage for the callback page to verify.
         if (!saveLinkOAuthState(state, provider)) {
-          throw new Error('OAuth state is not persistable');
+          throw new Error("OAuth state is not persistable");
         }
         window.location.href = authorize_url;
       }
     } catch (err: unknown) {
       showToast({
-        type: 'error',
-        message: getErrorDetail(err) || t('profile.accounts.linkError'),
+        type: "error",
+        message: getErrorDetail(err) || t("profile.accounts.linkError"),
       });
       setLinkingProvider(null);
     }
@@ -564,24 +625,30 @@ export default function ConnectedAccounts() {
     const initData = getTelegramInitData();
     if (!initData) return;
 
-    setLinkingProvider('telegram');
+    setLinkingProvider("telegram");
     try {
       const response = await authApi.linkTelegram({ init_data: initData });
       if (response.merge_required && response.merge_token) {
         navigate(`/merge/${response.merge_token}`, { replace: true });
       } else {
-        queryClient.invalidateQueries({ queryKey: ['linked-providers'] });
-        showToast({ type: 'success', message: t('profile.accounts.linkSuccess') });
+        queryClient.invalidateQueries({ queryKey: ["linked-providers"] });
+        showToast({
+          type: "success",
+          message: t("profile.accounts.linkSuccess"),
+        });
       }
     } catch (err: unknown) {
-      showToast({ type: 'error', message: getErrorDetail(err) || t('profile.accounts.linkError') });
+      showToast({
+        type: "error",
+        message: getErrorDetail(err) || t("profile.accounts.linkError"),
+      });
     } finally {
       setLinkingProvider(null);
     }
   };
 
   const handleLink = async (provider: string) => {
-    if (provider === 'telegram') {
+    if (provider === "telegram") {
       await handleLinkTelegram();
     } else {
       await handleLinkOAuth(provider);
@@ -598,7 +665,7 @@ export default function ConnectedAccounts() {
   };
 
   const renderLinkButton = (provider: LinkedProvider) => {
-    if (provider.provider === 'email') {
+    if (provider.provider === "email") {
       if (!isEmailAuthEnabled) return null;
       return (
         <Button
@@ -610,12 +677,12 @@ export default function ConnectedAccounts() {
             setEmailSuccess(null);
           }}
         >
-          {emailFormOpen ? t('common.cancel') : t('profile.accounts.link')}
+          {emailFormOpen ? t("common.cancel") : t("profile.accounts.link")}
         </Button>
       );
     }
 
-    if (provider.provider === 'telegram') {
+    if (provider.provider === "telegram") {
       if (inTelegram && getTelegramInitData()) {
         // Mini App: one-click button
         return (
@@ -623,10 +690,10 @@ export default function ConnectedAccounts() {
             variant="primary"
             size="sm"
             disabled={linkingProvider !== null || waitingExternalLink}
-            loading={linkingProvider === 'telegram'}
-            onClick={() => handleLink('telegram')}
+            loading={linkingProvider === "telegram"}
+            onClick={() => handleLink("telegram")}
           >
-            {t('profile.accounts.link')}
+            {t("profile.accounts.link")}
           </Button>
         );
       }
@@ -643,7 +710,7 @@ export default function ConnectedAccounts() {
           loading={linkingProvider === provider.provider}
           onClick={() => handleLink(provider.provider)}
         >
-          {t('profile.accounts.link')}
+          {t("profile.accounts.link")}
         </Button>
       );
     }
@@ -656,7 +723,7 @@ export default function ConnectedAccounts() {
     // runs once on mount, so provider cards arriving from the API later would
     // otherwise stay stuck at their initial variant (opacity 0) after a hard refresh
     <motion.div
-      key={isLoading ? 'loading' : 'ready'}
+      key={isLoading ? "loading" : "ready"}
       className="space-y-6"
       variants={staggerContainer}
       initial="initial"
@@ -665,9 +732,9 @@ export default function ConnectedAccounts() {
       {/* Page title */}
       <motion.div variants={staggerItem}>
         <h1 className="text-2xl font-bold text-dark-50 sm:text-3xl">
-          {t('profile.accounts.title')}
+          {t("profile.accounts.title")}
         </h1>
-        <p className="mt-1 text-dark-400">{t('profile.accounts.subtitle')}</p>
+        <p className="mt-1 text-dark-400">{t("profile.accounts.subtitle")}</p>
       </motion.div>
 
       {/* Loading state */}
@@ -681,7 +748,7 @@ export default function ConnectedAccounts() {
       {isError && (
         <motion.div variants={staggerItem}>
           <Card>
-            <p className="text-center text-dark-400">{t('common.error')}</p>
+            <p className="text-center text-dark-400">{t("common.error")}</p>
           </Card>
         </motion.div>
       )}
@@ -698,55 +765,70 @@ export default function ConnectedAccounts() {
                     {t(`profile.accounts.providers.${provider.provider}`)}
                   </p>
                   {provider.identifier && (
-                    <p className="truncate text-sm text-dark-400">{provider.identifier}</p>
+                    <p className="truncate text-sm text-dark-400">
+                      {provider.identifier}
+                    </p>
                   )}
                 </div>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1.5">
                 {provider.linked ? (
                   <>
-                    <span className="text-sm text-success-500">{t('profile.accounts.linked')}</span>
+                    <span className="text-sm text-success-500">
+                      {t("profile.accounts.linked")}
+                    </span>
                     {canUnlink(provider) && (
                       <Button
-                        variant={confirmingUnlink === provider.provider ? 'destructive' : 'outline'}
+                        variant={
+                          confirmingUnlink === provider.provider
+                            ? "destructive"
+                            : "outline"
+                        }
                         size="sm"
                         disabled={unlinkMutation.isPending}
                         loading={
-                          unlinkMutation.isPending && unlinkMutation.variables === provider.provider
+                          unlinkMutation.isPending &&
+                          unlinkMutation.variables === provider.provider
                         }
                         onClick={() => handleUnlink(provider.provider)}
                         onBlur={() => {
                           blurTimeoutRef.current = setTimeout(() => {
-                            setConfirmingUnlink((cur) => (cur === provider.provider ? null : cur));
+                            setConfirmingUnlink((cur) =>
+                              cur === provider.provider ? null : cur,
+                            );
                           }, 150);
                         }}
                       >
                         {confirmingUnlink === provider.provider
-                          ? t('profile.accounts.unlinkConfirmBtn')
-                          : t('profile.accounts.unlink')}
+                          ? t("profile.accounts.unlinkConfirmBtn")
+                          : t("profile.accounts.unlink")}
                       </Button>
                     )}
                   </>
                 ) : (
-                  isLinkableProvider(provider.provider) && renderLinkButton(provider)
+                  isLinkableProvider(provider.provider) &&
+                  renderLinkButton(provider)
                 )}
               </div>
             </div>
 
-            {confirmingUnlink === provider.provider && provider.forgets_email && (
-              <p className="mt-2 text-xs text-warning-400">
-                {t('profile.accounts.unlinkForgetsEmail', { email: provider.forgets_email })}
-              </p>
-            )}
+            {confirmingUnlink === provider.provider &&
+              provider.forgets_email && (
+                <p className="mt-2 text-xs text-warning-400">
+                  {t("profile.accounts.unlinkForgetsEmail", {
+                    email: provider.forgets_email,
+                  })}
+                </p>
+              )}
 
             {/* Inline email linking form */}
-            {provider.provider === 'email' && !provider.linked && (
+            {provider.provider === "email" && !provider.linked && (
               <AnimatePresence>
                 {emailFormOpen && (
                   <motion.div
                     key="email-link-form"
                     initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
+                    animate={{ height: "auto", opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.2 }}
                     className="overflow-hidden"
@@ -754,14 +836,17 @@ export default function ConnectedAccounts() {
                     <div className="mt-4 border-t border-dark-700/30 pt-4">
                       <p className="mb-4 text-sm text-dark-400">
                         {emailMergeCodePending
-                          ? t('profile.emailMergeCodeDescription')
-                          : t('profile.linkEmailDescription')}
+                          ? t("profile.emailMergeCodeDescription")
+                          : t("profile.linkEmailDescription")}
                       </p>
                       {emailMergeCodePending ? (
-                        <form onSubmit={handleVerifyMergeCode} className="space-y-3">
+                        <form
+                          onSubmit={handleVerifyMergeCode}
+                          className="space-y-3"
+                        >
                           <div>
                             <label htmlFor="email-merge-code" className="label">
-                              {t('profile.emailMergeCodeLabel')}
+                              {t("profile.emailMergeCodeLabel")}
                             </label>
                             <input
                               id="email-merge-code"
@@ -769,7 +854,11 @@ export default function ConnectedAccounts() {
                               inputMode="numeric"
                               maxLength={6}
                               value={emailMergeCode}
-                              onChange={(e) => setEmailMergeCode(e.target.value.replace(/\D/g, ''))}
+                              onChange={(e) =>
+                                setEmailMergeCode(
+                                  e.target.value.replace(/\D/g, ""),
+                                )
+                              }
                               placeholder="000000"
                               className="input tracking-[0.5em]"
                               autoComplete="one-time-code"
@@ -790,18 +879,21 @@ export default function ConnectedAccounts() {
                             fullWidth
                             loading={verifyEmailMergeMutation.isPending}
                           >
-                            {t('profile.emailMergeConfirm')}
+                            {t("profile.emailMergeConfirm")}
                           </Button>
                           <button
                             type="button"
                             onClick={cancelEmailMerge}
                             className="w-full text-sm text-dark-400 transition-colors hover:text-dark-200"
                           >
-                            {t('common.cancel')}
+                            {t("common.cancel")}
                           </button>
                         </form>
                       ) : (
-                        <form onSubmit={handleEmailSubmit} className="space-y-3">
+                        <form
+                          onSubmit={handleEmailSubmit}
+                          className="space-y-3"
+                        >
                           <div>
                             <label htmlFor="email-link-input" className="label">
                               Email
@@ -817,32 +909,42 @@ export default function ConnectedAccounts() {
                             />
                           </div>
                           <div>
-                            <label htmlFor="email-link-password" className="label">
-                              {t('auth.password')}
+                            <label
+                              htmlFor="email-link-password"
+                              className="label"
+                            >
+                              {t("auth.password")}
                             </label>
                             <input
                               id="email-link-password"
                               type="password"
                               value={emailPassword}
                               onChange={(e) => setEmailPassword(e.target.value)}
-                              placeholder={t('profile.passwordPlaceholder')}
+                              placeholder={t("profile.passwordPlaceholder")}
                               className="input"
                               autoComplete="new-password"
                             />
                             <p className="mt-1 text-xs text-dark-500">
-                              {t('profile.passwordHint')}
+                              {t("profile.passwordHint")}
                             </p>
                           </div>
                           <div>
-                            <label htmlFor="email-link-confirm" className="label">
-                              {t('auth.confirmPassword')}
+                            <label
+                              htmlFor="email-link-confirm"
+                              className="label"
+                            >
+                              {t("auth.confirmPassword")}
                             </label>
                             <input
                               id="email-link-confirm"
                               type="password"
                               value={emailConfirmPassword}
-                              onChange={(e) => setEmailConfirmPassword(e.target.value)}
-                              placeholder={t('profile.confirmPasswordPlaceholder')}
+                              onChange={(e) =>
+                                setEmailConfirmPassword(e.target.value)
+                              }
+                              placeholder={t(
+                                "profile.confirmPasswordPlaceholder",
+                              )}
                               className="input"
                               autoComplete="new-password"
                             />
@@ -859,8 +961,12 @@ export default function ConnectedAccounts() {
                             </div>
                           )}
 
-                          <Button type="submit" fullWidth loading={registerEmailMutation.isPending}>
-                            {t('profile.linkEmail')}
+                          <Button
+                            type="submit"
+                            fullWidth
+                            loading={registerEmailMutation.isPending}
+                          >
+                            {t("profile.linkEmail")}
                           </Button>
                         </form>
                       )}
@@ -874,7 +980,11 @@ export default function ConnectedAccounts() {
       ))}
 
       {/* Passkey и резервные коды: сам скрывается, если на бэке passkey выключен */}
-      <motion.div variants={staggerItem}>
+      <motion.div
+        variants={staggerItem}
+        ref={passkeySectionRef}
+        id="passkey-section"
+      >
         <PasskeySettings recoveryLogin={recoveryLogin} />
       </motion.div>
     </motion.div>
