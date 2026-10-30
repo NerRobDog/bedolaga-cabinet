@@ -20,13 +20,14 @@ vi.mock('@/platform', () => ({
   }),
   useHaptic: () => ({ notification: vi.fn(), impact: vi.fn(), selection: vi.fn() }),
 }));
+// 1 $ = 100 ₽: удобные круглые курсы для проверки подписей 0.12 / 4.40 / 12
 vi.mock('../hooks/useCurrency', () => ({
   useCurrency: () => ({
-    formatAmount: (v: number) => String(v),
-    currencySymbol: '₽',
-    convertAmount: (v: number) => v,
-    convertToRub: (v: number) => v,
-    targetCurrency: 'RUB',
+    formatAmount: (v: number, d = 2) => (v / 100).toFixed(d),
+    currencySymbol: '$',
+    convertAmount: (v: number) => v / 100,
+    convertToRub: (v: number) => v * 100,
+    targetCurrency: 'USD',
   }),
 }));
 
@@ -102,6 +103,22 @@ it('без вычета баланса пояснение не упоминае�
   expect(await screen.findByText('balance.quickHint.note{"periods":"30"}')).toBeTruthy();
 });
 
+it('копеечные и дробные суммы в валюте метода не округляются до целых', async () => {
+  getPaymentMethods.mockResolvedValue([
+    {
+      ...method,
+      min_amount_kopeks: 100,
+      quick_amounts: [1200, 44000, 120000],
+      quick_amount_hints: null,
+    },
+  ]);
+  renderPage();
+
+  expect(await screen.findByText('0.12')).toBeTruthy();
+  expect(screen.getByText('4.40')).toBeTruthy();
+  expect(screen.getByText('12')).toBeTruthy();
+});
+
 it('статические суммы и подогнанные под лимит кнопки остаются без подписи', async () => {
   getPaymentMethods.mockResolvedValue([
     {
@@ -112,6 +129,6 @@ it('статические суммы и подогнанные под лими�
   ]);
   renderPage();
 
-  expect(await screen.findByText('100')).toBeTruthy();
+  expect(await screen.findByText('1')).toBeTruthy();
   expect(screen.queryByText(/balance\.quickHint/)).toBeNull();
 });

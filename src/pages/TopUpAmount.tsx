@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 
 import { balanceApi } from '../api/balance';
+import { formatQuickValue, quickAmountDecimals } from '../utils/quickAmount';
 import { useCurrency } from '../hooks/useCurrency';
 import { checkRateLimit, getRateLimitResetTime, RATE_LIMIT_KEYS } from '../utils/rateLimit';
 import { useCloseOnSuccessNotification } from '../store/successNotification';
@@ -404,11 +405,11 @@ export default function TopUpAmount() {
     ),
   ];
   const quickDeductsBalance = quickPresets.some((p) => p.hint?.balance_deducted);
-  const currencyDecimals = targetCurrency === 'IRR' || targetCurrency === 'RUB' ? 0 : 2;
   const getQuickValue = (rub: number) =>
     targetCurrency === 'IRR'
       ? Math.round(convertAmount(rub)).toString()
-      : convertAmount(rub).toFixed(currencyDecimals);
+      : formatQuickValue(convertAmount(rub), targetCurrency);
+  const getQuickDecimals = (rub: number) => quickAmountDecimals(convertAmount(rub), targetCurrency);
   const isPending = topUpMutation.isPending || starsPaymentMutation.isPending;
 
   const handleOpenPayment = () => {
@@ -573,7 +574,7 @@ export default function TopUpAmount() {
                 <span
                   className={`text-base font-bold ${isSelected ? 'text-accent-400' : 'text-dark-200'}`}
                 >
-                  {formatAmount(a, 0)}
+                  {formatAmount(a, getQuickDecimals(a))}
                 </span>
                 <span
                   className={`mt-0.5 text-xs ${isSelected ? 'text-accent-400' : 'text-dark-500'}`}
