@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { subscriptionApi } from '@/api/subscription';
@@ -11,6 +12,7 @@ const QUERY_KEY = ['abroad-mode'];
 export default function AbroadModeCard({ subscriptionId }: { subscriptionId?: number }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const titleId = useId();
 
   const { data } = useQuery({
     queryKey: [...QUERY_KEY, subscriptionId ?? null],
@@ -36,10 +38,15 @@ export default function AbroadModeCard({ subscriptionId }: { subscriptionId?: nu
 
   return (
     <div className="bento-card">
-      <div className="mb-3 text-sm font-medium text-dark-100">
+      <div id={titleId} className="mb-3 text-base font-medium text-dark-100">
         {t('dashboard.abroadMode.title')}
       </div>
-      <div role="group" className="grid grid-cols-2 gap-2">
+      {/* Сегментированный переключатель: рамка (≥3:1) очерчивает контрол, неактивный вариант не пропадает на фоне карточки. */}
+      <div
+        role="group"
+        aria-labelledby={titleId}
+        className="grid grid-cols-2 gap-1 rounded-2xl border border-dark-500 p-1"
+      >
         {options.map((option) => {
           const active = option.value === abroad;
           return (
@@ -51,27 +58,27 @@ export default function AbroadModeCard({ subscriptionId }: { subscriptionId?: nu
               onClick={() => {
                 if (!active) mutation.mutate(option.value);
               }}
-              className={
+              className={`min-h-11 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 disabled:opacity-70 ${
                 active
-                  ? 'rounded-xl bg-accent-500 px-3 py-2.5 text-sm font-medium text-white'
-                  : 'rounded-xl bg-dark-800 px-3 py-2.5 text-sm text-dark-200 hover:bg-dark-700 disabled:opacity-60'
-              }
+                  ? 'bg-accent-500 text-on-accent'
+                  : 'bg-transparent text-dark-100 hover:bg-dark-700/40'
+              }`}
             >
               {option.label}
             </button>
           );
         })}
       </div>
-      <p className="mt-3 text-xs text-dark-400">
+      <p aria-live="polite" className="mt-3 text-sm text-dark-200">
         {mutation.isPending
           ? t('dashboard.abroadMode.switching')
           : abroad
             ? t('dashboard.abroadMode.currentAbroad')
             : t('dashboard.abroadMode.currentHome')}
       </p>
-      <p className="mt-1 text-xs text-dark-400">{t('dashboard.abroadMode.hint')}</p>
+      <p className="mt-2 text-sm text-dark-300">{t('dashboard.abroadMode.hint')}</p>
       {mutation.isError && (
-        <p role="alert" className="mt-2 text-xs text-error-400">
+        <p role="alert" className="mt-2 text-sm text-error-400">
           {t('dashboard.abroadMode.error')}
         </p>
       )}

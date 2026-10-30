@@ -283,14 +283,14 @@
   },
   "dashboard": {
     "abroadMode": {
-      "title": "您现在在哪里？",
+      "title": "连接模式",
       "home": "我在俄罗斯",
       "abroad": "我在国外",
-      "currentHome": "当前：俄罗斯模式",
-      "currentAbroad": "当前：出国旅行模式",
-      "hint": "切换后，请在 VPN 应用中刷新订阅，否则设置不会生效。",
+      "currentHome": "已开启俄罗斯模式：俄罗斯网站直连，不走 VPN。",
+      "currentAbroad": "已开启出行模式：俄罗斯网站和无广告 YouTube 通过俄罗斯的服务器访问。",
+      "hint": "要使新模式生效，请在 VPN 应用中刷新订阅。",
       "switching": "正在切换…",
-      "error": "无法切换模式，请稍后再试。"
+      "error": "无法切换模式，设置未更改，请稍后再试。"
     },
     "title": "个人中心",
     "welcome": "欢迎，{{name}}！",

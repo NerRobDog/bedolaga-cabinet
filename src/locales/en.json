@@ -303,14 +303,14 @@
   },
   "dashboard": {
     "abroadMode": {
-      "title": "Where are you now?",
+      "title": "Connection mode",
       "home": "I'm in Russia",
       "abroad": "I'm abroad",
-      "currentHome": "Current: Russia mode",
-      "currentAbroad": "Current: travelling abroad mode",
-      "hint": "After switching, refresh the subscription in your VPN app, otherwise the settings won't change.",
+      "currentHome": "Russia mode is on: Russian sites open directly, without VPN.",
+      "currentAbroad": "Travel mode is on: Russian sites and ad-free YouTube open through a server in Russia.",
+      "hint": "To apply the new mode, refresh the subscription in your VPN app.",
       "switching": "Switching…",
-      "error": "Could not switch the mode. Please try again a bit later."
+      "error": "Could not switch the mode. Nothing was changed — please try again a bit later."
     },
     "title": "Dashboard",
     "welcome": "Welcome, {{name}}!",
