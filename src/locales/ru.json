@@ -3512,6 +3512,8 @@
         "Platega Webhook Path": "Путь вебхука",
         "Platega Webhook Port": "Порт вебхука",
         "Auto Purchase After Topup Enabled": "Автопокупка после пополнения",
+        "Topup Dynamic Presets Enabled": "Быстрые суммы под цену продления",
+        "Topup Presets Deduct Balance": "Вычитать баланс из быстрых сумм",
         "Disable Topup Buttons": "Отключить кнопки пополнения",
         "Payment Balance Description": "Описание баланса",
         "Payment Balance Template": "Шаблон баланса",
