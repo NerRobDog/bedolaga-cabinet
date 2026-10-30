@@ -302,6 +302,16 @@
     "tokenExpiredOrInvalid": "This password reset link is invalid or has expired."
   },
   "dashboard": {
+    "abroadMode": {
+      "title": "Where are you now?",
+      "home": "I'm in Russia",
+      "abroad": "I'm abroad",
+      "currentHome": "Current: Russia mode",
+      "currentAbroad": "Current: travelling abroad mode",
+      "hint": "After switching, refresh the subscription in your VPN app, otherwise the settings won't change.",
+      "switching": "Switching…",
+      "error": "Could not switch the mode. Please try again a bit later."
+    },
     "title": "Dashboard",
     "welcome": "Welcome, {{name}}!",
     "welcomeNoName": "Welcome!",

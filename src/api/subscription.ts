@@ -18,6 +18,12 @@ import type {
 } from '../types';
 
 /** Helper: build query params with optional subscription_id */
+export interface AbroadModeState {
+  available: boolean;
+  abroad: boolean;
+  changed?: boolean;
+}
+
 const withSubId = (subscriptionId?: number, extra?: Record<string, unknown>) => ({
   params: {
     ...(subscriptionId != null && { subscription_id: subscriptionId }),
@@ -730,6 +736,25 @@ export const subscriptionApi = {
     const response = await apiClient.post(
       '/cabinet/subscription/revoke',
       undefined,
+      withSubId(subscriptionId),
+    );
+    return response.data;
+  },
+
+  // ── Abroad mode ("I'm in Russia" / "I'm abroad") ─────────────────────
+
+  getAbroadMode: async (subscriptionId?: number): Promise<AbroadModeState> => {
+    const response = await apiClient.get(
+      '/cabinet/subscription/abroad-mode',
+      withSubId(subscriptionId),
+    );
+    return response.data;
+  },
+
+  setAbroadMode: async (enabled: boolean, subscriptionId?: number): Promise<AbroadModeState> => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/abroad-mode',
+      { enabled },
       withSubId(subscriptionId),
     );
     return response.data;

@@ -13,6 +13,7 @@ import Onboarding, { useOnboarding } from '../components/Onboarding';
 import PromoOffersSection from '../components/PromoOffersSection';
 import NewsSection from '../components/news/NewsSection';
 import SubscriptionCardActive from '../components/dashboard/SubscriptionCardActive';
+import AbroadModeCard from '../components/dashboard/AbroadModeCard';
 import SubscriptionCardExpired from '../components/dashboard/SubscriptionCardExpired';
 import { hasLegacySubscription } from '../utils/legacySubscription';
 import TrialOfferCard from '../components/dashboard/TrialOfferCard';
@@ -406,6 +407,8 @@ export default function Dashboard() {
             connectedDevices={devicesData?.total ?? 0}
           />
         ) : null)}
+
+      {!isMultiTariff && subscription && !subscription.is_expired && <AbroadModeCard />}
 
       {/* Нет подписок: показываем триал (если доступен) и ВСЕГДА одну явную
           кнопку покупки. Триал не обязателен, чтобы попасть в витрину — раньше
