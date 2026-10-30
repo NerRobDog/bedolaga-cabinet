@@ -100,7 +100,9 @@ export default function SecureAccessNudge() {
           data-testid="secure-access-bonus"
           className="mt-2 rounded-xl border border-accent-500/40 bg-accent-500/15 px-3 py-2 text-sm font-bold text-accent-400"
         >
-          <span aria-hidden="true" className="mr-1.5">🎁</span>{" "}
+          <span aria-hidden="true" className="mr-1.5">
+            🎁
+          </span>{" "}
           {t("dashboard.secureAccess.linkBonus", { count: bonusDays })}
         </p>
       )}
