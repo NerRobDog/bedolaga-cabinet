@@ -905,7 +905,12 @@
         "description": "Pay via YooKassa"
       },
       "cryptobot": {
+        "name": "CryptoBot",
         "description": "Pay with cryptocurrency via CryptoBot"
+      },
+      "antarctic": {
+        "name": "Antarctic Wallet",
+        "description": "Get a foreign card in a minute and top it up via SBP. Pay for VPN and foreign services."
       },
       "telegram_stars": {
         "description": "Pay with Telegram Stars"

@@ -820,7 +820,12 @@
         "description": "پرداخت از طریق YooKassa"
       },
       "cryptobot": {
+        "name": "CryptoBot",
         "description": "پرداخت با ارز دیجیتال"
+      },
+      "antarctic": {
+        "name": "Antarctic Wallet",
+        "description": "در یک دقیقه کارت خارجی بگیرید و از طریق SBP شارژ کنید. هزینه VPN و سرویس‌های خارجی را پرداخت کنید."
       },
       "telegram_stars": {
         "description": "پرداخت با Telegram Stars"

@@ -938,7 +938,12 @@
         "description": "Оплата через ЮKassa"
       },
       "cryptobot": {
+        "name": "CryptoBot",
         "description": "Оплата криптовалютой через CryptoBot"
+      },
+      "antarctic": {
+        "name": "Antarctic Wallet",
+        "description": "Выпустите зарубежную карту за минуту и пополняйте её по СБП. Оплачивайте VPN и зарубежные сервисы"
       },
       "telegram_stars": {
         "description": "Оплата через Telegram Stars"

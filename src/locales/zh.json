@@ -813,7 +813,12 @@
         "description": "通过YooKassa支付"
       },
       "cryptobot": {
+        "name": "CryptoBot",
         "description": "通过CryptoBot加密货币支付"
+      },
+      "antarctic": {
+        "name": "Antarctic Wallet",
+        "description": "一分钟办理境外银行卡，并通过 SBP 充值。可用于支付 VPN 和境外服务。"
       },
       "telegram_stars": {
         "description": "通过Telegram Stars支付"
