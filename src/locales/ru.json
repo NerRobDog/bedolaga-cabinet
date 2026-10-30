@@ -3535,6 +3535,8 @@
         "Platega Webhook Path": "Путь вебхука",
         "Platega Webhook Port": "Порт вебхука",
         "Auto Purchase After Topup Enabled": "Автопокупка после пополнения",
+        "Abroad Mode Enabled": "Переключатель «Я в РФ / Я за границей»",
+        "Abroad External Squad Uuid": "Внешний сквад режима «за границей» (UUID)",
         "Topup Dynamic Presets Enabled": "Быстрые суммы под цену продления",
         "Topup Presets Deduct Balance": "Вычитать баланс из быстрых сумм",
         "Disable Topup Buttons": "Отключить кнопки пополнения",
