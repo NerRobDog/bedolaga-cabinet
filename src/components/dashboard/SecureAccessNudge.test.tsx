@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   navigate: vi.fn(),
   copy: vi.fn(),
+  openLink: vi.fn(),
   getLinked: vi.fn(),
   getOAuth: vi.fn(),
   listPasskeys: vi.fn(),
@@ -28,6 +29,9 @@ vi.mock('react-router', async (orig) => ({
   ...(await orig<typeof import('react-router')>()),
   useNavigate: () => h.navigate,
 }));
+vi.mock('@/platform/hooks/usePlatform', () => ({
+  usePlatform: () => ({ openLink: h.openLink }),
+}));
 vi.mock('@/utils/clipboard', () => ({ copyToClipboard: h.copy }));
 vi.mock('@/api/auth', () => ({
   authApi: { getLinkedProviders: h.getLinked, getOAuthProviders: h.getOAuth },
@@ -41,10 +45,7 @@ vi.mock('@/store/auth', () => ({
   useAuthStore: (sel: (s: typeof h.auth) => unknown) => sel(h.auth),
 }));
 
-import SecureAccessNudge, { SECURE_ACCESS_DISMISS_PREFIX } from './SecureAccessNudge';
-
-const KEY = `${SECURE_ACCESS_DISMISS_PREFIX}7`;
-const DAY = 24 * 60 * 60 * 1000;
+import SecureAccessNudge from './SecureAccessNudge';
 
 function renderNudge() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -135,27 +136,20 @@ describe('SecureAccessNudge', () => {
     expect(h.getLinked).not.toHaveBeenCalled();
   });
 
-  it('hides within 14 days of dismissal and makes no requests', async () => {
-    localStorage.setItem(KEY, String(Date.now() - 13 * DAY));
-    renderNudge();
-    await new Promise((r) => setTimeout(r, 20));
-    expect(screen.queryByText('dashboard.secureAccess.title')).toBeNull();
-    expect(h.getLinked).not.toHaveBeenCalled();
-    expect(h.listPasskeys).not.toHaveBeenCalled();
-  });
-
-  it('shows again after 14 days', async () => {
-    localStorage.setItem(KEY, String(Date.now() - 15 * DAY));
+  it('cannot be dismissed: no close button, a stale dismissal flag is ignored', async () => {
+    localStorage.setItem('secure_access_nudge_dismissed:7', String(Date.now()));
     renderNudge();
     expect(await screen.findByText('dashboard.secureAccess.title')).toBeTruthy();
+    expect(screen.queryByLabelText(/dismiss/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull();
   });
 
-  it('dismiss stores a timestamp and hides the banner', async () => {
+  it('Mini App: open-in-browser button opens the accounts screen without a token', async () => {
+    h.inTg = true;
+    h.availability = { status: { enabled: true, signup_enabled: false }, usable: false };
     renderNudge();
-    await screen.findByText('dashboard.secureAccess.title');
-    fireEvent.click(screen.getByLabelText('dashboard.secureAccess.dismiss'));
-    expect(screen.queryByText('dashboard.secureAccess.title')).toBeNull();
-    expect(Number(localStorage.getItem(KEY))).toBeGreaterThan(Date.now() - 5000);
+    fireEvent.click(await screen.findByText('dashboard.secureAccess.openBrowser'));
+    expect(h.openLink).toHaveBeenCalledWith(`${window.location.origin}/profile/accounts`);
   });
 
   it('Mini App: shows copy link instead of the passkey button', async () => {
@@ -176,6 +170,7 @@ describe('SecureAccessNudge', () => {
     expect(screen.queryByText('dashboard.secureAccess.addPasskey')).toBeNull();
     expect(screen.queryByText('dashboard.secureAccess.copyLink')).toBeNull();
     expect(screen.queryByText('dashboard.secureAccess.openInBrowser')).toBeNull();
+    expect(screen.queryByText('dashboard.secureAccess.openBrowser')).toBeNull();
   });
 
   describe('link bonus line', () => {

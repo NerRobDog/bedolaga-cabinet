@@ -7,26 +7,14 @@ import { passkeyApi } from '@/api/passkey';
 import { usePasskeyAvailability } from '@/hooks/usePasskeyAvailability';
 import { isInTelegramWebApp } from '@/hooks/useTelegramSDK';
 import { useAuthStore } from '@/store/auth';
+import { usePlatform } from '@/platform/hooks/usePlatform';
 import { copyToClipboard } from '@/utils/clipboard';
-import { XIcon } from '@/components/icons';
 
-export const SECURE_ACCESS_DISMISS_PREFIX = 'secure_access_nudge_dismissed:';
-const DISMISS_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const STALE_MS = 60_000;
-
-function isDismissed(userId: number): boolean {
-  try {
-    const raw = localStorage.getItem(`${SECURE_ACCESS_DISMISS_PREFIX}${userId}`);
-    const ts = raw ? Number(raw) : NaN;
-    return Number.isFinite(ts) && Date.now() - ts < DISMISS_TTL_MS;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Подсказка человеку, который входит только через Telegram: добавить второй способ входа
- * (passkey или OAuth-провайдер). Запросов не делает, пока скрыта или закрыта пользователем.
+ * (passkey или OAuth-провайдер). Закрыть нельзя: пропадает, только когда второй способ входа появился.
  */
 export default function SecureAccessNudge() {
   const { t } = useTranslation();
@@ -34,11 +22,11 @@ export default function SecureAccessNudge() {
   const user = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const { status, usable } = usePasskeyAvailability();
-  const [dismissedNow, setDismissedNow] = useState(false);
+  const platform = usePlatform();
   const [copied, setCopied] = useState(false);
 
   const userId = user?.id;
-  const active = isAuthenticated && userId != null && !dismissedNow && !isDismissed(userId);
+  const active = isAuthenticated && userId != null;
   const passkeyEnabled = Boolean(status?.enabled);
 
   const { data: linked } = useQuery({
@@ -75,19 +63,14 @@ export default function SecureAccessNudge() {
   const needBrowser = passkeyEnabled && !usable && isInTelegramWebApp();
   if (!passkeyEnabled && !hasOAuth) return null;
 
-  const dismiss = () => {
-    setDismissedNow(true);
-    try {
-      localStorage.setItem(`${SECURE_ACCESS_DISMISS_PREFIX}${user.id}`, String(Date.now()));
-    } catch {
-      // приватный режим: закрыто до перезагрузки
-    }
-  };
   const bonusDays =
     linked.link_bonus?.available === true && Number(linked.link_bonus.days) > 0
       ? Math.floor(Number(linked.link_bonus.days))
       : 0;
   const goAccounts = () => navigate('/profile/accounts');
+  // Без токена в ссылке: в браузере сессии нет, кабинет сам отправит на вход (Telegram/OIDC)
+  // и вернёт на экран привязки.
+  const openInBrowser = () => platform.openLink(`${window.location.origin}/profile/accounts`);
   const copyLink = async () => {
     try {
       await copyToClipboard(window.location.origin);
@@ -105,27 +88,31 @@ export default function SecureAccessNudge() {
       aria-labelledby="secure-access-title"
       className="relative overflow-hidden rounded-2xl border border-accent-500/30 bg-accent-500/5 p-4"
     >
-      <button
-        type="button"
-        aria-label={t('dashboard.secureAccess.dismiss')}
-        onClick={dismiss}
-        className="absolute right-3 top-3 rounded-lg p-1 text-dark-400 hover:text-dark-100"
-      >
-        <XIcon />
-      </button>
-      <h2 id="secure-access-title" className="pr-8 text-sm font-semibold text-dark-50">
+      <h2 id="secure-access-title" className="text-sm font-semibold text-dark-50">
         {t('dashboard.secureAccess.title')}
       </h2>
       <p className="mt-1 text-xs text-dark-300">{t('dashboard.secureAccess.text')}</p>
       {bonusDays > 0 && (
-        <p className="mt-2 text-xs font-medium text-accent-400">
-          {t('dashboard.secureAccess.linkBonus', { count: bonusDays })}
+        <p
+          data-testid="secure-access-bonus"
+          className="mt-3 rounded-xl border border-accent-500/40 bg-accent-500/15 px-3 py-2 text-sm font-bold text-accent-400"
+        >
+          <span aria-hidden="true">🎁</span> {t('dashboard.secureAccess.linkBonus', { count: bonusDays })}
         </p>
       )}
       {needBrowser && (
         <p className="mt-2 text-xs text-dark-200">{t('dashboard.secureAccess.openInBrowser')}</p>
       )}
       <div className="mt-3 flex flex-wrap gap-2">
+        {needBrowser && (
+          <button
+            type="button"
+            onClick={openInBrowser}
+            className={`${btn} bg-accent-500 text-on-accent hover:bg-accent-400`}
+          >
+            {t('dashboard.secureAccess.openBrowser')}
+          </button>
+        )}
         {canPasskey && (
           <button
             type="button"
@@ -140,7 +127,7 @@ export default function SecureAccessNudge() {
             type="button"
             onClick={goAccounts}
             className={
-              canPasskey
+              canPasskey || needBrowser
                 ? `${btn} border border-dark-600 text-dark-100 hover:bg-dark-800`
                 : `${btn} bg-accent-500 text-on-accent hover:bg-accent-400`
             }

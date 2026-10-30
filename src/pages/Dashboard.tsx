@@ -296,6 +296,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Второй способ входа (только Telegram-аккаунты): самый верх, не закрывается */}
+      <SecureAccessNudge />
+
       {/* Header */}
       <div data-onboarding="welcome">
         <h1 className="text-2xl font-bold text-dark-50 sm:text-3xl">
@@ -465,9 +468,6 @@ export default function Dashboard() {
           </div>
         </Link>
       )}
-
-      {/* Подсказка добавить второй способ входа (только Telegram-аккаунты) */}
-      <SecureAccessNudge />
 
       {/* Напоминания (админка → Напоминания) */}
       <ReminderCards />

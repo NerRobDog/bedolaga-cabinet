@@ -378,15 +378,15 @@
     "secureAccess": {
       "title": "Add a second way to sign in",
       "text": "A passkey or Google lets you log in even if Telegram is unavailable or you use a new device, such as a laptop without a VPN. Once added, you can sign in from any browser on any device, not only through Telegram, for example on a computer without a VPN or Telegram.",
-      "openInBrowser": "Open the cabinet in a regular browser to add a passkey.",
+      "openInBrowser": "Passkeys can't be created inside Telegram. Open the cabinet in a regular browser (you'll sign in with the same Telegram).",
       "addPasskey": "Add passkey",
       "linkGoogle": "Link Google",
       "linkAccount": "Link account",
       "copyLink": "Copy link",
       "copied": "Copied",
-      "dismiss": "Dismiss",
       "linkBonus_one": "Link now and get +{{count}} day of subscription",
-      "linkBonus_other": "Link now and get +{{count}} days of subscription"
+      "linkBonus_other": "Link now and get +{{count}} days of subscription",
+      "openBrowser": "Open in browser"
     },
     "trialOffer": {
       "freeTitle": "Free Trial Available",
