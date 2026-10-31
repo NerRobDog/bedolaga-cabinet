@@ -645,6 +645,38 @@ export default function TelegramLoginButton({ referralCode }: TelegramLoginButto
   // Normal widget UI (when script loads successfully)
   return (
     <div className="flex flex-col items-center space-y-4">
+      {/* Manual opt-in: same deep-link flow used as the anti-block fallback,
+          offered here as an explicit equal alternative to the widget for
+          users who'd rather confirm in the bot than type a phone number. */}
+      <button
+        type="button"
+        onClick={() => setManualDeepLink(true)}
+        aria-describedby="login-with-bot-hint"
+        className="inline-flex min-h-10 w-full max-w-[17rem] items-center justify-center gap-2 rounded-xl border border-dark-700 bg-dark-800/50 px-5 py-2 text-sm font-medium text-dark-200 transition-colors hover:border-dark-600 hover:bg-dark-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500/60"
+      >
+        <svg
+          className="h-5 w-5 flex-shrink-0 text-telegram-blue"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+        </svg>
+        {t('auth.loginWithBot')}
+      </button>
+      <p
+        id="login-with-bot-hint"
+        className="-mt-1 max-w-xs text-center text-xs leading-snug text-dark-400"
+      >
+        {t('auth.loginWithBotHint')}
+      </p>
+
+      <div className="flex w-full max-w-xs items-center gap-3">
+        <div className="h-px flex-1 bg-dark-700" />
+        <span className="text-[11px] text-dark-500">{t('common.or')}</span>
+        <div className="h-px flex-1 bg-dark-700" />
+      </div>
+
       {isOIDC ? (
         <div className="flex flex-col items-center space-y-2">
           <button
@@ -710,38 +742,6 @@ export default function TelegramLoginButton({ referralCode }: TelegramLoginButto
           {t('auth.orOpenInApp')}&nbsp;@{botUsername}
         </a>
       )}
-
-      <div className="flex w-full max-w-xs items-center gap-3">
-        <div className="h-px flex-1 bg-dark-700" />
-        <span className="text-[11px] text-dark-500">{t('common.or')}</span>
-        <div className="h-px flex-1 bg-dark-700" />
-      </div>
-
-      {/* Manual opt-in: same deep-link flow used as the anti-block fallback,
-          offered here as an explicit equal alternative to the widget for
-          users who'd rather confirm in the bot than type a phone number. */}
-      <button
-        type="button"
-        onClick={() => setManualDeepLink(true)}
-        aria-describedby="login-with-bot-hint"
-        className="inline-flex min-h-10 w-full max-w-[17rem] items-center justify-center gap-2 rounded-xl border border-dark-700 bg-dark-800/50 px-5 py-2 text-sm font-medium text-dark-200 transition-colors hover:border-dark-600 hover:bg-dark-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500/60"
-      >
-        <svg
-          className="h-5 w-5 flex-shrink-0 text-telegram-blue"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
-        </svg>
-        {t('auth.loginWithBot')}
-      </button>
-      <p
-        id="login-with-bot-hint"
-        className="-mt-1 max-w-xs text-center text-xs leading-snug text-dark-400"
-      >
-        {t('auth.loginWithBotHint')}
-      </p>
     </div>
   );
 }
