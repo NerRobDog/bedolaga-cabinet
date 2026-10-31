@@ -50,7 +50,10 @@ vi.mock('../hooks/useTelegramSDK', () => ({
   }),
 }));
 vi.mock('../components/LanguageSwitcher', () => ({ default: () => null }));
-vi.mock('../components/TelegramLoginButton', () => ({ default: () => null }));
+vi.mock('../components/TelegramLoginButton', () => ({
+  // Как настоящая: блок passkey отдаётся ей в afterBot и рисуется под кнопкой «через бота».
+  default: ({ afterBot }: { afterBot?: unknown }) => <>{afterBot}</>,
+}));
 vi.mock('../components/LegalFooter', () => ({ default: () => null }));
 vi.mock('../api/branding', () => ({
   getCachedBranding: () => null,

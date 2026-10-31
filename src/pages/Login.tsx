@@ -544,74 +544,83 @@ export default function Login() {
               </div>
             )}
 
-            {/* Telegram auth section */}
-            <div className="space-y-3">
-              {isLoading && isTelegramWebApp ? (
-                <div className="py-6 text-center">
-                  <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-                  <p className="text-sm text-dark-400">{t('auth.authenticating')}</p>
-                </div>
-              ) : isTelegramWebApp && error ? (
-                <div className="space-y-3 text-center">
-                  <button
-                    onClick={handleRetryTelegramAuth}
-                    className="btn-primary mx-auto flex items-center gap-2 px-5 py-2.5"
-                  >
-                    <RefreshIcon className="h-4 w-4" />
-                    {t('auth.tryAgain')}
-                  </button>
-                  <p className="text-xs text-dark-500">
-                    {t(
-                      'auth.telegramReopenHint',
-                      'If the problem persists, close and reopen the app',
-                    )}
-                  </p>
-                </div>
-              ) : (
-                <TelegramLoginButton referralCode={referralCode || undefined} />
-              )}
-            </div>
-
-            {/* OAuth providers - compact icon row */}
-            {oauthProviders.length > 0 && (
-              <>
-                <div className="my-4 flex items-center gap-3">
-                  <div className="h-px flex-1 bg-dark-700" />
-                  <span className="text-xs text-dark-500">{t('auth.or', 'or')}</span>
-                  <div className="h-px flex-1 bg-dark-700" />
-                </div>
-                <div className="flex items-stretch gap-2">
-                  {oauthProviders.map((provider) => (
-                    <button
-                      key={provider.name}
-                      type="button"
-                      onClick={() => handleOAuthLogin(provider.name)}
-                      disabled={oauthLoading !== null}
-                      className="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-xl border border-dark-700 bg-dark-800/80 py-2.5 transition-all hover:border-dark-600 hover:bg-dark-700 disabled:opacity-50"
-                      title={provider.display_name}
-                    >
-                      {oauthLoading === provider.name ? (
-                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-dark-400 border-t-white" />
-                      ) : (
-                        <OAuthProviderIcon provider={provider.name} className="h-5 w-5" />
-                      )}
-                      <span className="text-[10px] leading-none text-dark-500">
-                        {provider.display_name}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* Passkey: вход, регистрация без почты и Telegram, резервный код */}
+            {/* Порядок: вход через бота, passkey, Telegram, Google, ссылки passkey */}
             <PasskeyAuth
               onAuthenticated={handlePasskeyAuthenticated}
               onRecoveryLogin={handleRecoveryLogin}
               onSignedUp={setPendingSignup}
               consent={consent}
               disabled={isLoading}
-            />
+            >
+              {({ login, more }) => (
+                <>
+                  {/* Telegram auth section */}
+                  <div className="space-y-3">
+                    {isLoading && isTelegramWebApp ? (
+                      <div className="py-6 text-center">
+                        <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
+                        <p className="text-sm text-dark-400">{t('auth.authenticating')}</p>
+                      </div>
+                    ) : isTelegramWebApp && error ? (
+                      <div className="space-y-3 text-center">
+                        <button
+                          onClick={handleRetryTelegramAuth}
+                          className="btn-primary mx-auto flex items-center gap-2 px-5 py-2.5"
+                        >
+                          <RefreshIcon className="h-4 w-4" />
+                          {t('auth.tryAgain')}
+                        </button>
+                        <p className="text-xs text-dark-500">
+                          {t(
+                            'auth.telegramReopenHint',
+                            'If the problem persists, close and reopen the app',
+                          )}
+                        </p>
+                      </div>
+                    ) : (
+                      <TelegramLoginButton
+                        referralCode={referralCode || undefined}
+                        afterBot={login}
+                      />
+                    )}
+                  </div>
+
+                  {/* OAuth providers - compact icon row */}
+                  {oauthProviders.length > 0 && (
+                    <>
+                      <div className="my-4 flex items-center gap-3">
+                        <div className="h-px flex-1 bg-dark-700" />
+                        <span className="text-xs text-dark-500">{t('auth.or', 'or')}</span>
+                        <div className="h-px flex-1 bg-dark-700" />
+                      </div>
+                      <div className="flex items-stretch gap-2">
+                        {oauthProviders.map((provider) => (
+                          <button
+                            key={provider.name}
+                            type="button"
+                            onClick={() => handleOAuthLogin(provider.name)}
+                            disabled={oauthLoading !== null}
+                            className="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-xl border border-dark-700 bg-dark-800/80 py-2.5 transition-all hover:border-dark-600 hover:bg-dark-700 disabled:opacity-50"
+                            title={provider.display_name}
+                          >
+                            {oauthLoading === provider.name ? (
+                              <span className="h-5 w-5 animate-spin rounded-full border-2 border-dark-400 border-t-white" />
+                            ) : (
+                              <OAuthProviderIcon provider={provider.name} className="h-5 w-5" />
+                            )}
+                            <span className="text-[10px] leading-none text-dark-500">
+                              {provider.display_name}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {more}
+                </>
+              )}
+            </PasskeyAuth>
 
             {/* Email auth section - collapsible */}
             {isEmailAuthEnabled && (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   passkeyApi,
@@ -43,6 +43,11 @@ interface PasskeyAuthProps {
   consent: LegalConsentGateState;
   /** Идёт другой вход (например, автоматический через Telegram). */
   disabled?: boolean;
+  /**
+   * Страница сама раскладывает части: кнопку «Войти с passkey» и остальное (ссылки, формы,
+   * ошибку) — в разных местах экрана. Без children блок рисуется целиком, как раньше.
+   */
+  children?: (parts: { login: ReactNode; more: ReactNode }) => ReactNode;
 }
 
 function Spinner() {
@@ -57,6 +62,7 @@ export default function PasskeyAuth({
   onSignedUp,
   consent,
   disabled = false,
+  children,
 }: PasskeyAuthProps) {
   const { t } = useTranslation();
   const { showLogin, showSignup, showRecovery } = usePasskeyAvailability();
@@ -71,7 +77,9 @@ export default function PasskeyAuth({
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  if (!showLogin && !showSignup && !showRecovery) return null;
+  if (!showLogin && !showSignup && !showRecovery) {
+    return children ? <>{children({ login: null, more: null })}</> : null;
+  }
 
   const locked = busy !== null || disabled;
 
@@ -169,36 +177,40 @@ export default function PasskeyAuth({
   const linkClass =
     'py-1 text-sm text-accent-400 transition-colors hover:text-accent-300 disabled:opacity-50';
 
-  return (
-    <div data-testid="passkey-auth">
-      <div className="my-4 flex items-center gap-3">
-        <div className="h-px flex-1 bg-dark-700" />
-        <span className="text-xs text-dark-500">{t('auth.or', 'or')}</span>
-        <div className="h-px flex-1 bg-dark-700" />
-      </div>
+  const loginButton = showLogin ? (
+    <button
+      type="button"
+      onClick={handleLogin}
+      disabled={locked}
+      className="btn-secondary w-full gap-2 py-2.5"
+    >
+      {busy === 'login' ? (
+        <>
+          <Spinner />
+          {t('passkey.login.busy')}
+        </>
+      ) : (
+        <>
+          <KeyIcon className="h-5 w-5" />
+          {t('passkey.login.button')}
+        </>
+      )}
+    </button>
+  ) : null;
 
+  const divider = (
+    <div className="my-4 flex items-center gap-3">
+      <div className="h-px flex-1 bg-dark-700" />
+      <span className="text-xs text-dark-500">{t('auth.or', 'or')}</span>
+      <div className="h-px flex-1 bg-dark-700" />
+    </div>
+  );
+
+  const body = (
+    <>
       {view === 'idle' && (
         <div className="space-y-3">
-          {showLogin && (
-            <button
-              type="button"
-              onClick={handleLogin}
-              disabled={locked}
-              className="btn-secondary w-full gap-2 py-2.5"
-            >
-              {busy === 'login' ? (
-                <>
-                  <Spinner />
-                  {t('passkey.login.busy')}
-                </>
-              ) : (
-                <>
-                  <KeyIcon className="h-5 w-5" />
-                  {t('passkey.login.button')}
-                </>
-              )}
-            </button>
-          )}
+          {!children && loginButton}
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5">
             {showSignup && (
               <button
@@ -321,6 +333,31 @@ export default function PasskeyAuth({
           {error}
         </div>
       )}
+    </>
+  );
+
+  if (children) {
+    const hasMore = showSignup || showRecovery || view !== 'idle' || error !== '';
+    return (
+      <>
+        {children({
+          login: view === 'idle' ? loginButton : null,
+          more: hasMore ? (
+            <div data-testid="passkey-auth">
+              {divider}
+              {body}
+            </div>
+          ) : null,
+        })}
+      </>
+    );
+  }
+
+  return (
+    <div data-testid="passkey-auth">
+      {divider}
+
+      {body}
     </div>
   );
 }
