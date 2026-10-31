@@ -8,7 +8,6 @@ import { authApi } from '../api/auth';
 import { useAuthStore } from '../store/auth';
 import { useNavigate } from 'react-router';
 import { getPendingCampaignSlug } from '../utils/campaign';
-import { copyToClipboard } from '../utils/clipboard';
 import { getApiErrorMessage, isEndpointMissingError } from '../utils/api-error';
 import { useLegalConsentGate } from '../hooks/useLegalConsentGate';
 import LegalConsentGate from './LegalConsentGate';
@@ -55,10 +54,8 @@ export default function TelegramLoginButton({ referralCode, afterBot }: Telegram
   const [deepLinkBotUsername, setDeepLinkBotUsername] = useState<string>('');
   const [deepLinkPolling, setDeepLinkPolling] = useState(false);
   const [deepLinkError, setDeepLinkError] = useState('');
-  const [copied, setCopied] = useState(false);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
   const expireTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
   const pollInFlightRef = useRef(false);
 
   const loginWithDeepLink = useAuthStore((s) => s.loginWithDeepLink);
@@ -94,7 +91,6 @@ export default function TelegramLoginButton({ referralCode, afterBot }: Telegram
     return () => {
       if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
       if (expireTimeoutRef.current) clearTimeout(expireTimeoutRef.current);
-      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
     };
   }, []);
 
@@ -560,7 +556,6 @@ export default function TelegramLoginButton({ referralCode, afterBot }: Telegram
     const deepLinkUrl = deepLinkToken
       ? `https://t.me/${resolvedBotUsername}?start=webauth_${deepLinkToken}`
       : '';
-    const startCommand = deepLinkToken ? `/start webauth_${deepLinkToken}` : '';
 
     return (
       <div className="flex flex-col items-center space-y-5">
@@ -591,28 +586,6 @@ export default function TelegramLoginButton({ referralCode, afterBot }: Telegram
               </svg>
               {t('auth.openBotToLogin')}
             </a>
-
-            {/* Manual command */}
-            <div className="flex w-full max-w-xs flex-col items-center space-y-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  copyToClipboard(startCommand)
-                    .then(() => {
-                      setCopied(true);
-                      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
-                      copiedTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
-                    })
-                    .catch(() => {});
-                }}
-                className="group flex w-full items-center justify-between rounded-lg border border-dark-700 bg-dark-800/50 px-3 py-2 transition-colors hover:border-dark-600"
-              >
-                <code className="truncate text-xs text-dark-300">{startCommand}</code>
-                <span className="ml-2 flex-shrink-0 text-[10px] text-dark-500 transition-colors group-hover:text-dark-300">
-                  {copied ? t('auth.commandCopied') : t('common.copy')}
-                </span>
-              </button>
-            </div>
 
             {/* Polling status */}
             {deepLinkPolling && (
