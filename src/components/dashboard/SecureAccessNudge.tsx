@@ -85,7 +85,7 @@ export default function SecureAccessNudge() {
     'rounded-xl px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400';
   const link =
     'text-xs font-medium text-dark-300 underline underline-offset-2 hover:text-dark-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 rounded';
-  const showPrimary = needBrowser || canPasskey;
+  const primary = 'w-full bg-accent-500 text-on-accent hover:bg-accent-400';
 
   return (
     <section
@@ -107,50 +107,32 @@ export default function SecureAccessNudge() {
           {t('dashboard.secureAccess.linkBonus', { count: bonusDays })}
         </p>
       )}
-      <div className="mt-3 flex flex-col items-start gap-2">
+      <div className="mt-3 flex flex-col gap-2">
         {needBrowser && (
-          <button
-            type="button"
-            onClick={openInBrowser}
-            className={`${btn} bg-accent-500 text-on-accent hover:bg-accent-400`}
-          >
+          <button type="button" onClick={openInBrowser} className={`${btn} ${primary}`}>
             {t('dashboard.secureAccess.openBrowser')}
           </button>
         )}
         {canPasskey && (
-          <button
-            type="button"
-            onClick={goAccounts}
-            className={`${btn} bg-accent-500 text-on-accent hover:bg-accent-400`}
-          >
+          <button type="button" onClick={goAccounts} className={`${btn} ${primary}`}>
             {t('dashboard.secureAccess.addPasskey')}
           </button>
         )}
-        {needBrowser && (
-          <p className="text-[11px] leading-snug text-dark-400">
-            {t('dashboard.secureAccess.openInBrowser')}
-          </p>
+        {hasOAuth && (
+          <button type="button" onClick={goAccounts} className={`${btn} ${primary}`}>
+            {hasGoogle
+              ? t('dashboard.secureAccess.linkGoogle')
+              : t('dashboard.secureAccess.linkAccount')}
+          </button>
         )}
-        {(hasOAuth || needBrowser) && (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            {hasOAuth && (
-              <button
-                type="button"
-                onClick={goAccounts}
-                className={
-                  showPrimary ? link : `${btn} bg-accent-500 text-on-accent hover:bg-accent-400`
-                }
-              >
-                {hasGoogle
-                  ? t('dashboard.secureAccess.linkGoogle')
-                  : t('dashboard.secureAccess.linkAccount')}
-              </button>
-            )}
-            {needBrowser && (
-              <button type="button" onClick={() => void copyLink()} className={link}>
-                {copied ? t('dashboard.secureAccess.copied') : t('dashboard.secureAccess.copyLink')}
-              </button>
-            )}
+        {needBrowser && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-[11px] leading-snug text-dark-400">
+              {t('dashboard.secureAccess.openInBrowser')}
+            </p>
+            <button type="button" onClick={() => void copyLink()} className={link}>
+              {copied ? t('dashboard.secureAccess.copied') : t('dashboard.secureAccess.copyLink')}
+            </button>
           </div>
         )}
       </div>
