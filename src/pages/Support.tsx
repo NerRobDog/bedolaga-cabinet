@@ -584,7 +584,6 @@ export default function Support() {
                   <Button
                     type="submit"
                     disabled={
-                      configLoading ||
                       createAttachments.some((a) => a.uploading) ||
                       (formRequired && !isDiagnosticsComplete(diagnostics))
                     }
