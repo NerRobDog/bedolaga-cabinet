@@ -1353,7 +1353,8 @@
         "always": "From the very start",
         "after_update": "After an update or re-issue"
       },
-      "incomplete": "Answer all five questions of the form"
+      "incomplete": "Answer all five questions of the form",
+      "requiredByServer": "Please answer the questions below and send again"
     },
     "title": "Support",
     "newTicket": "New Ticket",

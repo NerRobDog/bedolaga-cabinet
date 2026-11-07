@@ -10,7 +10,7 @@ import { useAuthStore } from '../store/auth';
 import { logger } from '../utils/logger';
 import { checkRateLimit, getRateLimitResetTime, RATE_LIMIT_KEYS } from '../utils/rateLimit';
 import { getApiErrorMessage } from '../utils/api-error';
-import { isOpenTicketConflict } from '../utils/ticketErrors';
+import { isDiagnosticsRequired, isOpenTicketConflict } from '../utils/ticketErrors';
 import {
   buildDiagnostics,
   isDiagnosticsComplete,
@@ -118,7 +118,10 @@ export default function Support() {
     queryFn: infoApi.getSupportConfig,
   });
 
-  const formRequired = supportConfig?.ticket_form_required === true;
+  // Конфиг не загрузился — анкету не показываем, но если бэк ответит 422 по
+  // diagnostics, включаем её принудительно и просим заполнить.
+  const [serverWantsForm, setServerWantsForm] = useState(false);
+  const formRequired = supportConfig?.ticket_form_required === true || serverWantsForm;
 
   const { data: tickets, isLoading } = useQuery({
     queryKey: ['tickets'],
@@ -199,6 +202,11 @@ export default function Support() {
       // в никуда: форма просто оставалась на месте, и пользователь жал «Отправить»
       // снова и снова, не понимая, почему обращение не создаётся.
       log.error('Ticket creation failed', error);
+      if (isDiagnosticsRequired(error)) {
+        setServerWantsForm(true);
+        setFormError(t('support.form.requiredByServer'));
+        return;
+      }
       if (isOpenTicketConflict(error)) {
         setFormError(t('support.errors.alreadyOpenTicket'));
         // Открытый тикет мог появиться в другой сессии (бот, второе устройство) —
@@ -576,6 +584,7 @@ export default function Support() {
                   <Button
                     type="submit"
                     disabled={
+                      configLoading ||
                       createAttachments.some((a) => a.uploading) ||
                       (formRequired && !isDiagnosticsComplete(diagnostics))
                     }

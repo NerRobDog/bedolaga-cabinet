@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { describe, expect, it } from 'vitest';
-import { isOpenTicketConflict } from './ticketErrors';
+import { isDiagnosticsRequired, isOpenTicketConflict } from './ticketErrors';
 
 function axiosErrorWithStatus(status: number, detail?: unknown): AxiosError {
   const headers = new AxiosHeaders();
@@ -81,5 +81,22 @@ describe('обработчики ошибок на форме поддержки
       source.indexOf('const replyMutation'),
     );
     expect(block).toContain('invalidateQueries');
+  });
+});
+
+describe('isDiagnosticsRequired', () => {
+  const make = (status: number, detail: unknown) => {
+    const err = new AxiosError('x', 'ERR_BAD_REQUEST');
+    err.response = { status, data: { detail }, statusText: '', headers: {}, config: {} as never };
+    return err;
+  };
+  it('true for 422 with loc body.diagnostics', () => {
+    expect(isDiagnosticsRequired(make(422, [{ loc: ['body', 'diagnostics'] }]))).toBe(true);
+  });
+  it('false for other fields, statuses, shapes', () => {
+    expect(isDiagnosticsRequired(make(422, [{ loc: ['body', 'title'] }]))).toBe(false);
+    expect(isDiagnosticsRequired(make(400, [{ loc: ['body', 'diagnostics'] }]))).toBe(false);
+    expect(isDiagnosticsRequired(make(422, 'nope'))).toBe(false);
+    expect(isDiagnosticsRequired(new Error('x'))).toBe(false);
   });
 });
