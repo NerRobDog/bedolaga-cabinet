@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { CheckIcon } from '@/components/icons';
 import {
   DIAGNOSTICS_FIELDS,
   DIAGNOSTICS_ORDER,
@@ -44,7 +45,7 @@ export function DiagnosticsForm({ answers, onChange }: DiagnosticsFormProps) {
                   key={option}
                   className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
                     checked
-                      ? 'border-accent-500 bg-accent-500/10 text-dark-50'
+                      ? 'border-accent-500 bg-accent-500/20 font-medium text-dark-50 ring-1 ring-accent-500'
                       : 'border-dark-700 bg-dark-800/50 text-dark-300 hover:border-dark-500'
                   }`}
                 >
@@ -56,6 +57,11 @@ export function DiagnosticsForm({ answers, onChange }: DiagnosticsFormProps) {
                     onChange={() => select(field, option)}
                     className="sr-only"
                   />
+                  {checked && (
+                    <span data-testid="diagnostics-check" aria-hidden="true">
+                      <CheckIcon className="h-4 w-4 text-accent-500" />
+                    </span>
+                  )}
                   {t(`support.form.${field}.${option}`)}
                 </label>
               );

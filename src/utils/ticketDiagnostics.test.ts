@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildDiagnostics, isDiagnosticsComplete } from './ticketDiagnostics';
+import {
+  buildDiagnostics,
+  isDiagnosticsComplete,
+  missingDiagnosticsQuestions,
+} from './ticketDiagnostics';
 
 const FULL = {
   platform: 'ios',
@@ -41,5 +45,13 @@ describe('ticket diagnostics', () => {
     expect(buildDiagnostics({ ...other, platform_other: '  ' })).toBeNull();
     expect(isDiagnosticsComplete({ ...other, platform_other: 'Steam Deck' })).toBe(true);
     expect(isDiagnosticsComplete({ ...FULL, app: 'other', app_other: ' x ' })).toBe(true);
+  });
+
+  it('lists unanswered question numbers, counting "other" without text as unanswered', () => {
+    expect(missingDiagnosticsQuestions({})).toEqual([1, 2, 3, 4, 5]);
+    expect(missingDiagnosticsQuestions({ ...FULL, network: undefined })).toEqual([3]);
+    expect(missingDiagnosticsQuestions({ ...FULL, app: 'other', app_other: '  ' })).toEqual([2]);
+    expect(missingDiagnosticsQuestions({ ...FULL, app: 'other', app_other: 'Streisand' })).toEqual([]);
+    expect(missingDiagnosticsQuestions(FULL)).toEqual([]);
   });
 });

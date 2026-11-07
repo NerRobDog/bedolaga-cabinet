@@ -41,21 +41,26 @@ function normalizeOther(raw: string | undefined): string {
   return Array.from(text).slice(0, OTHER_MAX_LENGTH).join('').trim();
 }
 
+/** Отвечено ли поле вариантом из списка; «Другое» требует непустой текст (как на бэке). */
+function isAnswered(answers: DiagnosticsAnswers, field: DiagnosticsField): boolean {
+  const value = answers[field];
+  if (typeof value !== 'string' || !(DIAGNOSTICS_FIELDS[field] as readonly string[]).includes(value)) {
+    return false;
+  }
+  return value !== OTHER_OPTION || normalizeOther(answers[otherKey(field)]) !== '';
+}
+
+/** Номера вопросов (с 1), на которые ещё нет ответа — для подсказки у кнопки «Отправить». */
+export function missingDiagnosticsQuestions(answers: DiagnosticsAnswers): number[] {
+  return DIAGNOSTICS_ORDER.flatMap((field, index) => (isAnswered(answers, field) ? [] : [index + 1]));
+}
+
 /**
  * Все пять полей отвечены вариантом из списка; «Другое» требует непустой текст
  * (как `validate_diagnostics` на бэке).
  */
 export function isDiagnosticsComplete(answers: DiagnosticsAnswers): boolean {
-  return DIAGNOSTICS_ORDER.every((field) => {
-    const value = answers[field];
-    if (
-      typeof value !== 'string' ||
-      !(DIAGNOSTICS_FIELDS[field] as readonly string[]).includes(value)
-    ) {
-      return false;
-    }
-    return value !== OTHER_OPTION || normalizeOther(answers[otherKey(field)]) !== '';
-  });
+  return missingDiagnosticsQuestions(answers).length === 0;
 }
 
 /**

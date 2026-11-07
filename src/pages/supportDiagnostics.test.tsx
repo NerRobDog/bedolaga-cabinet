@@ -13,7 +13,9 @@ const ticket = {
   messages: [],
 };
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: { list?: string }) => (opts?.list ? `${key}:${opts.list}` : key),
+  }),
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 vi.mock('../api/info', () => ({
@@ -124,4 +126,57 @@ it('hides the form and sends no diagnostics when the backend flag is off', async
   await waitFor(() =>
     expect(api.create).toHaveBeenCalledWith('VPN', 'Does not connect at all', undefined, undefined),
   );
+});
+
+it('names the unanswered questions next to the disabled submit', async () => {
+  await openForm();
+  expect(screen.getByTestId('diagnostics-missing').textContent).toBe(
+    'support.form.missing:1, 2, 3, 4, 5',
+  );
+  for (const value of ['ios', 'happ', 'wifi', 'slow']) pick(value);
+  expect(screen.getByTestId('diagnostics-missing').textContent).toBe('support.form.missing:5');
+  pick('today');
+  expect(screen.queryByTestId('diagnostics-missing')).toBeNull();
+});
+
+it('marks the chosen option with a check, not only a border', async () => {
+  await openForm();
+  pick('happ');
+  const chosen = document.querySelector('input[value="happ"]')!.closest('label')!;
+  const other = document.querySelector('input[value="clash_mi"]')!.closest('label')!;
+  expect(chosen.querySelector('[data-testid="diagnostics-check"]')).not.toBeNull();
+  expect(other.querySelector('[data-testid="diagnostics-check"]')).toBeNull();
+});
+
+it('scrolls the form into view when it opens below the fold', async () => {
+  const scroll = vi.fn();
+  const proto = Element.prototype as unknown as {
+    scrollIntoView: unknown;
+    getBoundingClientRect: () => DOMRect;
+  };
+  const origScroll = proto.scrollIntoView;
+  const origRect = proto.getBoundingClientRect;
+  proto.scrollIntoView = scroll;
+  proto.getBoundingClientRect = () => ({ top: 2000, bottom: 2600 }) as DOMRect;
+  try {
+    await openForm();
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
+  } finally {
+    proto.scrollIntoView = origScroll;
+    proto.getBoundingClientRect = origRect;
+  }
+});
+
+it('does not scroll when the form is already in view', async () => {
+  const scroll = vi.fn();
+  const proto = Element.prototype as unknown as { scrollIntoView: unknown };
+  const orig = proto.scrollIntoView;
+  proto.scrollIntoView = scroll;
+  try {
+    await openForm();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(scroll).not.toHaveBeenCalled();
+  } finally {
+    proto.scrollIntoView = orig;
+  }
 });

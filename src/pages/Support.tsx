@@ -14,6 +14,7 @@ import { isDiagnosticsRequired, isOpenTicketConflict } from '../utils/ticketErro
 import {
   buildDiagnostics,
   isDiagnosticsComplete,
+  missingDiagnosticsQuestions,
   type DiagnosticsAnswers,
 } from '../utils/ticketDiagnostics';
 import { DiagnosticsForm } from '@/components/support/DiagnosticsForm';
@@ -85,9 +86,21 @@ export default function Support() {
   const [createAttachments, setCreateAttachments] = useState<MediaAttachment[]>([]);
   const [replyAttachments, setReplyAttachments] = useState<MediaAttachment[]>([]);
   const createFileInputRef = useRef<HTMLInputElement>(null);
+  const createFormRef = useRef<HTMLDivElement>(null);
   const replyFileInputRef = useRef<HTMLInputElement>(null);
 
   const blobUrlsRef = useRef<Set<string>>(new Set());
+
+  // На телефоне форма стоит под списком обращений: без прокрутки клиент не видит, что она открылась.
+  useEffect(() => {
+    if (!showCreateForm) return;
+    const el = createFormRef.current;
+    if (!el) return;
+    const { top } = el.getBoundingClientRect();
+    if (top < 0 || top > window.innerHeight * 0.6) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [showCreateForm]);
 
   useEffect(() => {
     const urls = blobUrlsRef;
@@ -479,7 +492,7 @@ export default function Support() {
         {/* Ticket Detail / Create Form */}
         <Card className="lg:col-span-2">
           {showCreateForm ? (
-            <div>
+            <div ref={createFormRef} className="scroll-mt-20">
               <h2 className="mb-6 text-lg font-semibold text-dark-100">
                 {t('support.createTicket')}
               </h2>
@@ -580,9 +593,26 @@ export default function Support() {
                   </div>
                 )}
 
+                {formRequired && missingDiagnosticsQuestions(diagnostics).length > 0 && (
+                  <p
+                    id="diagnostics-missing"
+                    data-testid="diagnostics-missing"
+                    className="text-sm text-dark-300"
+                  >
+                    {t('support.form.missing', {
+                      list: missingDiagnosticsQuestions(diagnostics).join(', '),
+                    })}
+                  </p>
+                )}
+
                 <div className="flex gap-3">
                   <Button
                     type="submit"
+                    aria-describedby={
+                      formRequired && !isDiagnosticsComplete(diagnostics)
+                        ? 'diagnostics-missing'
+                        : undefined
+                    }
                     disabled={
                       createAttachments.some((a) => a.uploading) ||
                       (formRequired && !isDiagnosticsComplete(diagnostics))
