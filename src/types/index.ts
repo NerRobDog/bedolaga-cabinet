@@ -710,6 +710,21 @@ export interface SupportConfig {
   contact_is_telegram?: boolean;
   /** Бэк требует анкету (`diagnostics`) при создании тикета. */
   ticket_form_required?: boolean;
+  /** Варианты анкеты (устройства, приложения, место); нет у старого бэка. */
+  ticket_form_options?: TicketFormOptions | null;
+}
+
+export interface TicketFormPlatform {
+  id: string;
+  /** Локализованное имя по языку; `null` — берётся из i18n `support.form.platform.<id>`. */
+  name: Record<string, string> | null;
+}
+
+export interface TicketFormOptions {
+  platforms: TicketFormPlatform[];
+  /** Имена приложений по id устройства. */
+  apps: Record<string, string[]>;
+  locations: string[];
 }
 
 // Paginated response

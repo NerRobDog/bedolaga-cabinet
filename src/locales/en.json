@@ -1312,8 +1312,13 @@
   },
   "support": {
     "form": {
-      "title": "Please answer five questions first so support can sort this out faster",
+      "title": "Please answer a few questions first so support can sort this out faster",
       "otherPlaceholder": "Describe it briefly (up to 100 characters)",
+      "location": {
+        "prompt": "Where are you right now?",
+        "russia": "In Russia",
+        "abroad": "Abroad"
+      },
       "platform": {
         "prompt": "Which device has the problem?",
         "otherLabel": "Which device",
@@ -1327,10 +1332,7 @@
       "app": {
         "prompt": "Which app do you use to connect?",
         "otherLabel": "Which app",
-        "clash_mi": "Clash Mi",
-        "happ": "Happ",
-        "rabbit_hole": "Rabbit Hole",
-        "flclash_x": "FlClash X",
+        "choosePlatformFirst": "Choose a device first",
         "other": "Other"
       },
       "network": {
@@ -1353,7 +1355,7 @@
         "always": "From the very start",
         "after_update": "After an update or re-issue"
       },
-      "incomplete": "Answer all five questions of the form",
+      "incomplete": "Answer all the questions of the form",
       "missing": "To send, answer questions: {{list}}",
       "requiredByServer": "Please answer the questions below and send again"
     },

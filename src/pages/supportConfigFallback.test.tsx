@@ -114,11 +114,15 @@ it('shows the form on a diagnostics 422 and resubmits with diagnostics', async (
   expect(screen.getByText('support.form.requiredByServer')).toBeTruthy();
   const submit = document.querySelector<HTMLButtonElement>('button[type=submit]')!;
   expect(submit.disabled).toBe(true);
-  for (const value of ['ios', 'happ', 'wifi', 'slow', 'today']) pick(value);
+  for (const value of ['abroad', 'ios', 'Happ', 'wifi', 'slow', 'today']) pick(value);
   expect(submit.disabled).toBe(false);
   fireEvent.submit(document.querySelector('form')!);
   await waitFor(() => expect(api.create).toHaveBeenCalledTimes(2));
-  expect(api.create.mock.calls[1][3]).toMatchObject({ platform: 'ios', app: 'happ' });
+  expect(api.create.mock.calls[1][3]).toMatchObject({
+    location: 'abroad',
+    platform: 'ios',
+    app: 'Happ',
+  });
 });
 
 it('does not treat a 422 on another field as a diagnostics request', async () => {

@@ -1,5 +1,5 @@
 import { uiLocale } from '@/utils/uiLocale';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
@@ -14,6 +14,7 @@ import { isDiagnosticsRequired, isOpenTicketConflict } from '../utils/ticketErro
 import {
   buildDiagnostics,
   isDiagnosticsComplete,
+  resolveTicketFormOptions,
   missingDiagnosticsQuestions,
   type DiagnosticsAnswers,
 } from '../utils/ticketDiagnostics';
@@ -138,6 +139,7 @@ export default function Support() {
   // diagnostics, включаем её принудительно и просим заполнить.
   const [serverWantsForm, setServerWantsForm] = useState(false);
   const formRequired = supportConfig?.ticket_form_required === true || serverWantsForm;
+  const formOptions = useMemo(() => resolveTicketFormOptions(supportConfig), [supportConfig]);
 
   const { data: tickets, isLoading } = useQuery({
     queryKey: ['tickets'],
@@ -200,7 +202,7 @@ export default function Support() {
         newTitle,
         newMessage,
         media,
-        formRequired ? (buildDiagnostics(diagnostics) ?? undefined) : undefined,
+        formRequired ? (buildDiagnostics(diagnostics, formOptions) ?? undefined) : undefined,
       );
     },
     onSuccess: (ticket) => {
@@ -431,7 +433,7 @@ export default function Support() {
                   onSubmit={(e) => {
                     e.preventDefault();
                     setFormError(null);
-                    if (formRequired && !isDiagnosticsComplete(diagnostics)) {
+                    if (formRequired && !isDiagnosticsComplete(diagnostics, formOptions)) {
                       setFormError(t('support.form.incomplete'));
                       return;
                     }
@@ -446,7 +448,11 @@ export default function Support() {
                   className="space-y-4"
                 >
                   {formRequired && (
-                    <DiagnosticsForm answers={diagnostics} onChange={setDiagnostics} />
+                    <DiagnosticsForm
+                      answers={diagnostics}
+                      onChange={setDiagnostics}
+                      options={formOptions}
+                    />
                   )}
                   <div>
                     <label htmlFor="support-subject" className="label">
@@ -524,29 +530,30 @@ export default function Support() {
                     </div>
                   )}
 
-                  {formRequired && missingDiagnosticsQuestions(diagnostics).length > 0 && (
-                    <p
-                      id="diagnostics-missing"
-                      data-testid="diagnostics-missing"
-                      className="text-sm text-dark-300"
-                    >
-                      {t('support.form.missing', {
-                        list: missingDiagnosticsQuestions(diagnostics).join(', '),
-                      })}
-                    </p>
-                  )}
+                  {formRequired &&
+                    missingDiagnosticsQuestions(diagnostics, formOptions).length > 0 && (
+                      <p
+                        id="diagnostics-missing"
+                        data-testid="diagnostics-missing"
+                        className="text-sm text-dark-300"
+                      >
+                        {t('support.form.missing', {
+                          list: missingDiagnosticsQuestions(diagnostics, formOptions).join(', '),
+                        })}
+                      </p>
+                    )}
 
                   <div className="flex gap-3">
                     <Button
                       type="submit"
                       aria-describedby={
-                        formRequired && !isDiagnosticsComplete(diagnostics)
+                        formRequired && !isDiagnosticsComplete(diagnostics, formOptions)
                           ? 'diagnostics-missing'
                           : undefined
                       }
                       disabled={
                         createAttachments.some((a) => a.uploading) ||
-                        (formRequired && !isDiagnosticsComplete(diagnostics))
+                        (formRequired && !isDiagnosticsComplete(diagnostics, formOptions))
                       }
                       loading={createMutation.isPending}
                     >

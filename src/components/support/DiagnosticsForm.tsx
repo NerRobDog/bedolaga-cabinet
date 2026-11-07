@@ -1,32 +1,56 @@
 import { useTranslation } from 'react-i18next';
 import { CheckIcon } from '@/components/icons';
 import {
-  DIAGNOSTICS_FIELDS,
   DIAGNOSTICS_ORDER,
   OTHER_MAX_LENGTH,
   OTHER_OPTION,
   hasOther,
+  optionsForField,
   otherKey,
   type DiagnosticsAnswers,
   type DiagnosticsField,
+  type TicketFormOptions,
 } from '@/utils/ticketDiagnostics';
 
 interface DiagnosticsFormProps {
   answers: DiagnosticsAnswers;
   onChange: (answers: DiagnosticsAnswers) => void;
+  options: TicketFormOptions;
 }
 
 /**
- * Пять обязательных вопросов перед обращением. Тексты — `support.form.<поле>.*`.
+ * Обязательные вопросы перед обращением. Тексты — `support.form.<поле>.*`.
  * «Другое» открывает короткое текстовое поле (до `OTHER_MAX_LENGTH` знаков).
  */
-export function DiagnosticsForm({ answers, onChange }: DiagnosticsFormProps) {
-  const { t } = useTranslation();
+export function DiagnosticsForm({ answers, onChange, options }: DiagnosticsFormProps) {
+  const { t, i18n } = useTranslation();
 
   const select = (field: DiagnosticsField, option: string) => {
     const next: DiagnosticsAnswers = { ...answers, [field]: option };
     if (option !== OTHER_OPTION) delete next[otherKey(field)];
+    if (
+      field === 'platform' &&
+      next.app &&
+      !optionsForField('app', next, options).includes(next.app)
+    ) {
+      delete next.app;
+      delete next.app_other;
+    }
     onChange(next);
+  };
+
+  const label = (field: DiagnosticsField, option: string): string => {
+    if (field === 'app' && option !== OTHER_OPTION) return option;
+    if (field === 'platform') {
+      const name = options.platforms.find((p) => p.id === option)?.name;
+      if (name) {
+        const lang = i18n?.language?.split('-')[0];
+        const localized = (lang && (name[i18n.language] ?? name[lang])) || name.en;
+        const first = Object.values(name)[0];
+        if (localized || first) return localized || first;
+      }
+    }
+    return t(`support.form.${field}.${option}`);
   };
 
   return (
@@ -37,8 +61,13 @@ export function DiagnosticsForm({ answers, onChange }: DiagnosticsFormProps) {
           <legend className="label">
             {index + 1}. {t(`support.form.${field}.prompt`)}
           </legend>
+          {field === 'app' && !answers.platform && (
+            <p className="text-sm text-dark-400" data-testid="diagnostics-app-hint">
+              {t('support.form.app.choosePlatformFirst')}
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
-            {DIAGNOSTICS_FIELDS[field].map((option) => {
+            {optionsForField(field, answers, options).map((option) => {
               const checked = answers[field] === option;
               return (
                 <label
@@ -62,7 +91,7 @@ export function DiagnosticsForm({ answers, onChange }: DiagnosticsFormProps) {
                       <CheckIcon className="h-4 w-4 text-accent-500" />
                     </span>
                   )}
-                  {t(`support.form.${field}.${option}`)}
+                  {label(field, option)}
                 </label>
               );
             })}

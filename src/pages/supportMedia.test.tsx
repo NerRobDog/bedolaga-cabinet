@@ -48,10 +48,11 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-const ANSWERS = ['ios', 'happ', 'wifi', 'slow', 'today'];
+const ANSWERS = ['abroad', 'ios', 'Happ', 'wifi', 'slow', 'today'];
 const DIAGNOSTICS = {
+  location: 'abroad',
   platform: 'ios',
-  app: 'happ',
+  app: 'Happ',
   network: 'wifi',
   symptom: 'slow',
   since: 'today',
