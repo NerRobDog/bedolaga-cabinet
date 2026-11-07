@@ -118,6 +118,8 @@ export default function Support() {
     queryFn: infoApi.getSupportConfig,
   });
 
+  const formRequired = supportConfig?.ticket_form_required === true;
+
   const { data: tickets, isLoading } = useQuery({
     queryKey: ['tickets'],
     queryFn: () => ticketsApi.getTickets({ per_page: 20 }),
@@ -179,7 +181,7 @@ export default function Support() {
         newTitle,
         newMessage,
         media,
-        buildDiagnostics(diagnostics) ?? undefined,
+        formRequired ? (buildDiagnostics(diagnostics) ?? undefined) : undefined,
       );
     },
     onSuccess: (ticket) => {
@@ -477,7 +479,7 @@ export default function Support() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   setFormError(null);
-                  if (!isDiagnosticsComplete(diagnostics)) {
+                  if (formRequired && !isDiagnosticsComplete(diagnostics)) {
                     setFormError(t('support.form.incomplete'));
                     return;
                   }
@@ -491,7 +493,9 @@ export default function Support() {
                 }}
                 className="space-y-4"
               >
-                <DiagnosticsForm answers={diagnostics} onChange={setDiagnostics} />
+                {formRequired && (
+                  <DiagnosticsForm answers={diagnostics} onChange={setDiagnostics} />
+                )}
                 <div>
                   <label htmlFor="support-subject" className="label">
                     {t('support.subject')}
@@ -573,7 +577,7 @@ export default function Support() {
                     type="submit"
                     disabled={
                       createAttachments.some((a) => a.uploading) ||
-                      !isDiagnosticsComplete(diagnostics)
+                      (formRequired && !isDiagnosticsComplete(diagnostics))
                     }
                     loading={createMutation.isPending}
                   >

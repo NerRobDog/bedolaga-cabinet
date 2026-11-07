@@ -708,6 +708,8 @@ export interface SupportConfig {
   support_username?: string | null;
   /** Резолвнутый контакт ведёт в Telegram, а не на внешний хелпдеск. */
   contact_is_telegram?: boolean;
+  /** Бэк требует анкету (`diagnostics`) при создании тикета. */
+  ticket_form_required?: boolean;
 }
 
 // Paginated response

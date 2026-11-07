@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Support from './Support';
 
-const api = vi.hoisted(() => ({ create: vi.fn() }));
+const api = vi.hoisted(() => ({ create: vi.fn(), required: true }));
 const ticket = {
   id: 1,
   title: 'VPN',
@@ -17,7 +17,12 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 vi.mock('../api/info', () => ({
-  infoApi: { getSupportConfig: async () => ({ tickets_enabled: true }) },
+  infoApi: {
+    getSupportConfig: async () => ({
+      tickets_enabled: true,
+      ticket_form_required: api.required,
+    }),
+  },
 }));
 vi.mock('@/platform', () => ({
   usePlatform: () => ({
@@ -38,6 +43,7 @@ vi.mock('../api/tickets', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  api.required = true;
   localStorage.clear();
   api.create.mockResolvedValue(ticket);
 });
@@ -92,5 +98,30 @@ it('sends diagnostics with "other" text in the create request', async () => {
       symptom: 'no_connect',
       since: 'after_update',
     }),
+  );
+});
+
+it('blocks submit when "other" is chosen without text', async () => {
+  const container = await openForm();
+  pick('other');
+  for (const value of ['happ', 'both', 'no_connect', 'after_update']) pick(value);
+  expect(submit(container).disabled).toBe(true);
+  fireEvent.submit(container.querySelector('form')!);
+  expect(api.create).not.toHaveBeenCalled();
+  const [otherInput] = screen.getAllByPlaceholderText('support.form.otherPlaceholder');
+  fireEvent.change(otherInput, { target: { value: '   ' } });
+  expect(submit(container).disabled).toBe(true);
+  fireEvent.change(otherInput, { target: { value: 'Steam Deck' } });
+  expect(submit(container).disabled).toBe(false);
+});
+
+it('hides the form and sends no diagnostics when the backend flag is off', async () => {
+  api.required = false;
+  const container = await openForm();
+  expect(screen.queryByTestId('support-diagnostics-form')).toBeNull();
+  expect(submit(container).disabled).toBe(false);
+  fireEvent.submit(container.querySelector('form')!);
+  await waitFor(() =>
+    expect(api.create).toHaveBeenCalledWith('VPN', 'Does not connect at all', undefined, undefined),
   );
 });

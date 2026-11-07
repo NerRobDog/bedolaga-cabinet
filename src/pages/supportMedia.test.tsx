@@ -17,7 +17,9 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 vi.mock('../api/info', () => ({
-  infoApi: { getSupportConfig: async () => ({ tickets_enabled: true }) },
+  infoApi: {
+    getSupportConfig: async () => ({ tickets_enabled: true, ticket_form_required: true }),
+  },
 }));
 vi.mock('@/platform', () => ({
   usePlatform: () => ({

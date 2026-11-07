@@ -32,9 +32,14 @@ describe('ticket diagnostics', () => {
     expect(body?.platform_other?.length).toBeLessThanOrEqual(100);
     expect(body?.platform_other?.startsWith('Linux box x')).toBe(true);
     expect(body).not.toHaveProperty('app_other');
-    expect(buildDiagnostics({ ...FULL, platform: 'other', platform_other: '   ' })).toEqual({
-      ...FULL,
-      platform: 'other',
-    });
+  });
+
+  it('requires non-blank text when other is selected', () => {
+    const other = { ...FULL, platform: 'other' };
+    expect(isDiagnosticsComplete(other)).toBe(false);
+    expect(isDiagnosticsComplete({ ...other, platform_other: '   ' })).toBe(false);
+    expect(buildDiagnostics({ ...other, platform_other: '  ' })).toBeNull();
+    expect(isDiagnosticsComplete({ ...other, platform_other: 'Steam Deck' })).toBe(true);
+    expect(isDiagnosticsComplete({ ...FULL, app: 'other', app_other: ' x ' })).toBe(true);
   });
 });

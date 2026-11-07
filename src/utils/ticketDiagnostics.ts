@@ -35,19 +35,32 @@ export function otherKey(field: DiagnosticsField): `${DiagnosticsField}_other` {
   return `${field}_other`;
 }
 
-/** Все пять полей отвечены вариантом из списка. */
+/** Схлопнутые пробелы, не длиннее лимита бэка. */
+function normalizeOther(raw: string | undefined): string {
+  const text = (raw ?? '').split(/\s+/).filter(Boolean).join(' ');
+  return Array.from(text).slice(0, OTHER_MAX_LENGTH).join('').trim();
+}
+
+/**
+ * Все пять полей отвечены вариантом из списка; «Другое» требует непустой текст
+ * (как `validate_diagnostics` на бэке).
+ */
 export function isDiagnosticsComplete(answers: DiagnosticsAnswers): boolean {
   return DIAGNOSTICS_ORDER.every((field) => {
     const value = answers[field];
-    return (
-      typeof value === 'string' && (DIAGNOSTICS_FIELDS[field] as readonly string[]).includes(value)
-    );
+    if (
+      typeof value !== 'string' ||
+      !(DIAGNOSTICS_FIELDS[field] as readonly string[]).includes(value)
+    ) {
+      return false;
+    }
+    return value !== OTHER_OPTION || normalizeOther(answers[otherKey(field)]) !== '';
   });
 }
 
 /**
  * Тело `diagnostics` для запроса: только id вариантов, текст «Другое» — когда
- * «Другое» выбрано и текст не пуст (схлопнутые пробелы, не длиннее лимита бэка).
+ * «Другое» выбрано (текст обязателен, см. `isDiagnosticsComplete`).
  * Для неполной анкеты — `null`.
  */
 export function buildDiagnostics(answers: DiagnosticsAnswers): Record<string, string> | null {
@@ -57,9 +70,7 @@ export function buildDiagnostics(answers: DiagnosticsAnswers): Record<string, st
     const value = answers[field] as string;
     out[field] = value;
     if (value === OTHER_OPTION) {
-      const text = (answers[otherKey(field)] ?? '').split(/\s+/).filter(Boolean).join(' ');
-      const clipped = Array.from(text).slice(0, OTHER_MAX_LENGTH).join('').trim();
-      if (clipped) out[otherKey(field)] = clipped;
+      out[otherKey(field)] = normalizeOther(answers[otherKey(field)]);
     }
   }
   return out;
