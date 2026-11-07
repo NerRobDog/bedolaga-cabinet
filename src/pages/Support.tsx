@@ -11,6 +11,12 @@ import { logger } from '../utils/logger';
 import { checkRateLimit, getRateLimitResetTime, RATE_LIMIT_KEYS } from '../utils/rateLimit';
 import { getApiErrorMessage } from '../utils/api-error';
 import { isOpenTicketConflict } from '../utils/ticketErrors';
+import {
+  buildDiagnostics,
+  isDiagnosticsComplete,
+  type DiagnosticsAnswers,
+} from '../utils/ticketDiagnostics';
+import { DiagnosticsForm } from '@/components/support/DiagnosticsForm';
 import type { SupportConfig, TicketDetail } from '../types';
 import { Card } from '@/components/data-display/Card';
 import { Button } from '@/components/primitives/Button';
@@ -68,6 +74,7 @@ export default function Support() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newMessage, setNewMessage] = useState('');
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsAnswers>({});
   const [replyMessage, setReplyMessage] = useState('');
   // Ошибка активной формы: и клиентский rate-limit, и отказ бэка (409 «уже есть
   // открытый тикет», 403 «поддержка выключена/пользователь заблокирован» и т.п.).
@@ -168,7 +175,12 @@ export default function Support() {
               media_items: ready.map((a) => ({ type: a.mediaType, file_id: a.fileId })),
             }
           : undefined;
-      return ticketsApi.createTicket(newTitle, newMessage, media);
+      return ticketsApi.createTicket(
+        newTitle,
+        newMessage,
+        media,
+        buildDiagnostics(diagnostics) ?? undefined,
+      );
     },
     onSuccess: (ticket) => {
       queryClient.invalidateQueries({ queryKey: ['tickets'] });
@@ -176,6 +188,7 @@ export default function Support() {
       setFormError(null);
       setNewTitle('');
       setNewMessage('');
+      setDiagnostics({});
       clearCreateAttachments();
       setSelectedTicket(ticket);
     },
@@ -464,6 +477,10 @@ export default function Support() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   setFormError(null);
+                  if (!isDiagnosticsComplete(diagnostics)) {
+                    setFormError(t('support.form.incomplete'));
+                    return;
+                  }
                   // Rate limit: max 3 tickets per 60 seconds
                   if (!checkRateLimit(RATE_LIMIT_KEYS.TICKET_CREATE, 3, 60000)) {
                     const resetTime = getRateLimitResetTime(RATE_LIMIT_KEYS.TICKET_CREATE);
@@ -474,6 +491,7 @@ export default function Support() {
                 }}
                 className="space-y-4"
               >
+                <DiagnosticsForm answers={diagnostics} onChange={setDiagnostics} />
                 <div>
                   <label htmlFor="support-subject" className="label">
                     {t('support.subject')}
@@ -553,7 +571,10 @@ export default function Support() {
                 <div className="flex gap-3">
                   <Button
                     type="submit"
-                    disabled={createAttachments.some((a) => a.uploading)}
+                    disabled={
+                      createAttachments.some((a) => a.uploading) ||
+                      !isDiagnosticsComplete(diagnostics)
+                    }
                     loading={createMutation.isPending}
                   >
                     <SendIcon className="h-4 w-4" />

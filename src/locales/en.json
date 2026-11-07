@@ -1311,6 +1311,50 @@
     }
   },
   "support": {
+    "form": {
+      "title": "Please answer five questions first so support can sort this out faster",
+      "otherPlaceholder": "Describe it briefly (up to 100 characters)",
+      "platform": {
+        "prompt": "Which device has the problem?",
+        "otherLabel": "Which device",
+        "ios": "iOS (iPhone, iPad)",
+        "android": "Android",
+        "windows": "Windows",
+        "macos": "macOS",
+        "router": "Router",
+        "other": "Other"
+      },
+      "app": {
+        "prompt": "Which app do you use to connect?",
+        "otherLabel": "Which app",
+        "clash_mi": "Clash Mi",
+        "happ": "Happ",
+        "rabbit_hole": "Rabbit Hole",
+        "flclash_x": "FlClash X",
+        "other": "Other"
+      },
+      "network": {
+        "prompt": "Which network are you connecting through?",
+        "mobile": "Mobile data",
+        "wifi": "Home Wi-Fi",
+        "both": "Both"
+      },
+      "symptom": {
+        "prompt": "What exactly is not working?",
+        "nothing": "Nothing opens",
+        "specific_site": "A specific site or app",
+        "slow": "It works slowly",
+        "no_connect": "It does not connect"
+      },
+      "since": {
+        "prompt": "Since when has this been happening?",
+        "today": "Today",
+        "days": "A few days",
+        "always": "From the very start",
+        "after_update": "After an update or re-issue"
+      },
+      "incomplete": "Answer all five questions of the form"
+    },
     "title": "Support",
     "newTicket": "New Ticket",
     "yourTickets": "Your Tickets",

@@ -41,11 +41,13 @@ export const ticketsApi = {
     title: string,
     message: string,
     media?: MediaParams,
+    diagnostics?: Record<string, string>,
   ): Promise<TicketDetail> => {
     const response = await apiClient.post<TicketDetail>('/cabinet/tickets', {
       title,
       message,
       ...media,
+      ...(diagnostics ? { diagnostics } : {}),
     });
     return response.data;
   },

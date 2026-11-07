@@ -46,6 +46,18 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+const ANSWERS = ['ios', 'happ', 'wifi', 'slow', 'today'];
+const DIAGNOSTICS = {
+  platform: 'ios',
+  app: 'happ',
+  network: 'wifi',
+  symptom: 'slow',
+  since: 'today',
+};
+function answerForm() {
+  for (const value of ANSWERS) fireEvent.click(document.querySelector(`input[value="${value}"]`)!);
+}
+
 it.each(['create', 'reply'])('preserves mixed image and video types on %s', async (mode) => {
   const { container } = render(
     <QueryClientProvider
@@ -62,6 +74,7 @@ it.each(['create', 'reply'])('preserves mixed image and video types on %s', asyn
     fireEvent.change(screen.getByLabelText('support.message'), {
       target: { value: 'Synthetic media check' },
     });
+    answerForm();
   } else {
     fireEvent.click(await screen.findByRole('button', { name: /Media check/ }));
     await screen.findByPlaceholderText('support.replyPlaceholder');
@@ -86,7 +99,9 @@ it.each(['create', 'reply'])('preserves mixed image and video types on %s', asyn
   };
   await waitFor(() =>
     expect(mode === 'create' ? api.create : api.reply).toHaveBeenCalledWith(
-      ...(mode === 'create' ? ['Media check', 'Synthetic media check', payload] : [1, '', payload]),
+      ...(mode === 'create'
+        ? ['Media check', 'Synthetic media check', payload, DIAGNOSTICS]
+        : [1, '', payload]),
     ),
   );
   expect(input.accept).toContain('video/mp4');
