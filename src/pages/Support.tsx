@@ -14,6 +14,7 @@ import { isDiagnosticsRequired, isOpenTicketConflict } from '../utils/ticketErro
 import {
   buildDiagnostics,
   isDiagnosticsComplete,
+  pruneAnswers,
   resolveTicketFormOptions,
   missingDiagnosticsQuestions,
   type DiagnosticsAnswers,
@@ -140,6 +141,10 @@ export default function Support() {
   const [serverWantsForm, setServerWantsForm] = useState(false);
   const formRequired = supportConfig?.ticket_form_required === true || serverWantsForm;
   const formOptions = useMemo(() => resolveTicketFormOptions(supportConfig), [supportConfig]);
+  // Опции пришли или обновились после того, как пользователь уже выбрал: убираем устаревшие ответы.
+  useEffect(() => {
+    setDiagnostics((prev) => pruneAnswers(prev, formOptions));
+  }, [formOptions]);
 
   const { data: tickets, isLoading } = useQuery({
     queryKey: ['tickets'],
@@ -222,6 +227,7 @@ export default function Support() {
       log.error('Ticket creation failed', error);
       if (isDiagnosticsRequired(error)) {
         setServerWantsForm(true);
+        queryClient.invalidateQueries({ queryKey: ['support-config'] });
         setFormError(t('support.form.requiredByServer'));
         return;
       }

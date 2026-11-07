@@ -112,6 +112,8 @@ it('shows the form on a diagnostics 422 and resubmits with diagnostics', async (
   fireEvent.submit(document.querySelector('form')!);
   await screen.findByTestId('support-diagnostics-form');
   expect(screen.getByText('support.form.requiredByServer')).toBeTruthy();
+  // the 422 refetches the support config so fresh form options are used
+  await waitFor(() => expect(api.config.mock.calls.length).toBeGreaterThanOrEqual(2));
   const submit = document.querySelector<HTMLButtonElement>('button[type=submit]')!;
   expect(submit.disabled).toBe(true);
   for (const value of ['abroad', 'ios', 'Happ', 'wifi', 'slow', 'today']) pick(value);

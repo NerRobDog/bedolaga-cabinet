@@ -154,3 +154,19 @@ export function buildDiagnostics(
   }
   return out;
 }
+
+/** Ответы без значений, которых нет в текущих опциях (и без их `_other`); без изменений — тот же объект. */
+export function pruneAnswers(
+  answers: DiagnosticsAnswers,
+  options: TicketFormOptions,
+): DiagnosticsAnswers {
+  let next = answers;
+  for (const field of DIAGNOSTICS_ORDER) {
+    const value = next[field];
+    if (value === undefined || optionsForField(field, next, options).includes(value)) continue;
+    next = { ...next };
+    delete next[field];
+    delete next[otherKey(field)];
+  }
+  return next;
+}

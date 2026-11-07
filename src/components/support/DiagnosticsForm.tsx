@@ -45,12 +45,12 @@ export function DiagnosticsForm({ answers, onChange, options }: DiagnosticsFormP
       const name = options.platforms.find((p) => p.id === option)?.name;
       if (name) {
         const lang = i18n?.language?.split('-')[0];
-        const localized = (lang && (name[i18n.language] ?? name[lang])) || name.en;
+        const localized = (lang && (name[i18n.language] || name[lang])) || name.en;
         const first = Object.values(name)[0];
         if (localized || first) return localized || first;
       }
     }
-    return t(`support.form.${field}.${option}`);
+    return t(`support.form.${field}.${option}`, { defaultValue: option });
   };
 
   return (

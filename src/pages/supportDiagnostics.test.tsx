@@ -19,7 +19,12 @@ const ticket = {
 };
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: { list?: string }) => (opts?.list ? `${key}:${opts.list}` : key),
+    t: (key: string, opts?: { list?: string; defaultValue?: string }) =>
+      opts?.list
+        ? `${key}:${opts.list}`
+        : key.includes('ghost')
+          ? (opts?.defaultValue ?? key)
+          : key,
     i18n: { language: api.lang },
   }),
   initReactI18next: { type: '3rdParty', init: () => {} },
@@ -54,7 +59,9 @@ vi.mock('../api/tickets', () => ({
   },
 }));
 
+let queryClient: QueryClient;
 beforeEach(() => {
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.clearAllMocks();
   api.required = true;
   api.lang = 'ru';
@@ -69,9 +76,7 @@ const pick = (value: string) =>
 
 async function openForm() {
   const { container } = render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
+    <QueryClientProvider client={queryClient}>
       <Support />
     </QueryClientProvider>,
   );
@@ -313,4 +318,21 @@ it('sends app_other when the app is other', async () => {
       expect.objectContaining({ app: 'other', app_other: 'Streisand', platform: 'android' }),
     ),
   );
+});
+
+it('shows the raw id for a platform with no name and no i18n text', async () => {
+  api.options = { ...SERVER_OPTIONS, platforms: [{ id: 'ghost', name: { ru: '' } }] };
+  await openForm();
+  expect(labelOf('ghost')).toBe('ghost');
+});
+
+it('drops answers missing from options that arrive after the user picked', async () => {
+  const container = await openForm();
+  pick('windows');
+  expect((radio('windows') as HTMLInputElement).checked).toBe(true);
+  api.options = SERVER_OPTIONS;
+  await queryClient.invalidateQueries({ queryKey: ['support-config'] });
+  await waitFor(() => expect(radio('windows')).toBeNull());
+  expect(submit(container).disabled).toBe(true);
+  expect(screen.getByTestId('diagnostics-missing').textContent).toContain('2');
 });
