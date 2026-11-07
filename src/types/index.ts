@@ -12,7 +12,12 @@ export interface User {
   referral_code: string | null;
   language: string;
   created_at: string;
-  auth_type: 'telegram' | 'email' | 'google' | 'yandex' | 'discord' | 'vk'; // Тип аутентификации
+  auth_type: 'telegram' | 'email' | 'google' | 'yandex' | 'discord' | 'vk' | 'passkey'; // Тип аутентификации
+}
+
+// Фото профиля Telegram для шапки: подписанная ссылка на прокси медиа бота или null.
+export interface UserAvatarResponse {
+  photo_url: string | null;
 }
 
 // OAuth types
@@ -91,6 +96,7 @@ export interface Subscription {
   hide_subscription_link: boolean;
   is_active: boolean;
   is_expired: boolean;
+  is_limited: boolean;
   traffic_purchases?: TrafficPurchase[];
   // Daily tariff fields
   is_daily?: boolean;
@@ -101,6 +107,8 @@ export interface Subscription {
   tariff_id?: number;
   tariff_name?: string;
   traffic_reset_mode?: string;
+  /** Старая подписка (куплена в классике, тарифа нет, оператор на тарифах): продления и автоплатежа нет, только переход на тариф. */
+  requires_tariff_selection?: boolean;
 }
 
 // Response wrapper for subscription status endpoint
@@ -109,40 +117,45 @@ export interface SubscriptionStatusResponse {
   subscription: Subscription | null;
 }
 
+// Multi-tariff subscription list item (from GET /cabinet/subscriptions)
+export interface SubscriptionListItem {
+  id: number;
+  status: string;
+  tariff_id: number | null;
+  tariff_name: string | null;
+  traffic_limit_gb: number;
+  traffic_used_gb: number;
+  device_limit: number;
+  end_date: string | null;
+  subscription_url: string | null;
+  subscription_crypto_link: string | null;
+  is_trial: boolean;
+  is_daily?: boolean;
+  is_daily_paused?: boolean;
+  autopay_enabled: boolean;
+  connected_squads: string[] | null;
+  /** Старая подписка (куплена в классике, тарифа нет, оператор на тарифах): карточка ведёт на выбор тарифа. */
+  requires_tariff_selection?: boolean;
+}
+
+// Response from GET /cabinet/subscriptions (multi-tariff)
+export interface SubscriptionsListResponse {
+  subscriptions: SubscriptionListItem[];
+  multi_tariff_enabled: boolean;
+}
+
 // Device types
 export interface Device {
   hwid: string;
   platform: string;
   device_model: string;
   created_at: string | null;
-}
-
-export interface DevicesResponse {
-  devices: Device[];
-  total: number;
-  device_limit: number;
-}
-
-// Tariff switch preview
-export interface TariffSwitchPreview {
-  can_switch: boolean;
-  current_tariff_id: number | null;
-  current_tariff_name: string | null;
-  new_tariff_id: number;
-  new_tariff_name: string;
-  remaining_days: number;
-  upgrade_cost_kopeks: number;
-  upgrade_cost_label: string;
-  balance_kopeks: number;
-  balance_label: string;
-  has_enough_balance: boolean;
-  missing_amount_kopeks: number;
-  missing_amount_label: string;
-  is_upgrade: boolean;
-  // Discount fields (from promo group)
-  base_upgrade_cost_kopeks?: number;
-  discount_percent?: number;
-  discount_kopeks?: number;
+  /**
+   * User-set local alias persisted in the bot DB (`user_device_aliases`).
+   * `null` when the user hasn't renamed the device — clients fall back
+   * to `device_model` / `platform` for display.
+   */
+  local_name?: string | null;
 }
 
 export interface RenewalOption {
@@ -151,6 +164,8 @@ export interface RenewalOption {
   price_rubles: number;
   discount_percent: number;
   original_price_kopeks: number | null;
+  /** Период, отмеченный оператором как самый выгодный. */
+  is_highlighted?: boolean;
 }
 
 export interface TrafficPackage {
@@ -172,7 +187,12 @@ export interface TrialInfo {
   requires_payment: boolean;
   price_kopeks: number;
   price_rubles: number;
+  /** Код причины лёгкого триала (см. trialReasons) или произвольная строка прежних проверок. */
   reason_unavailable: string | null;
+  /** 'lite' — короткий триал без привязанного Telegram; null/отсутствует у старых бэков. */
+  kind?: 'full' | 'lite' | null;
+  /** Точный срок в часах: у лёгкого триала duration_days округлён вниз и может быть 0. */
+  duration_hours?: number | null;
 }
 
 // Purchase options types
@@ -267,6 +287,8 @@ export interface TariffPeriod {
   extra_devices_cost_label?: string;
   base_tariff_price_kopeks?: number;
   base_tariff_price_label?: string;
+  /** Период, отмеченный оператором как самый выгодный. */
+  is_highlighted?: boolean;
 }
 
 export interface TariffServer {
@@ -278,6 +300,8 @@ export interface Tariff {
   id: number;
   name: string;
   description: string | null;
+  /** Тариф отмечен оператором как выгодный — выделяется в списке. */
+  is_highlighted?: boolean;
   tier_level: number;
   traffic_limit_gb: number;
   traffic_limit_label: string;
@@ -317,8 +341,17 @@ export interface Tariff {
   daily_discount_percent?: number;
   original_price_per_day_kopeks?: number;
   custom_days_discount_percent?: number;
+  custom_days_pricing?: {
+    price_per_day_kopeks: number;
+    device_price_kopeks: number;
+    period_prices: Record<string, number>;
+    default_device_discount_percent: number;
+    discounts_by_days: Record<string, { period: number; devices: number }>;
+  };
   // Traffic reset
   traffic_reset_mode?: string;
+  // Multi-tariff: already purchased by user
+  is_purchased?: boolean;
 }
 
 export interface TariffsPurchaseOptions {
@@ -330,7 +363,17 @@ export interface TariffsPurchaseOptions {
   // New fields for expired subscription handling
   subscription_status?: string;
   subscription_is_expired?: boolean;
+  // Free (0₽) source tariff: switch is blocked (free days must reset),
+  // tariff cards must offer the purchase flow instead of the prorated switch
+  subscription_on_free_tariff?: boolean;
   has_subscription?: boolean;
+  // Multi-tariff: all available tariffs already purchased
+  all_tariffs_purchased?: boolean;
+  // СБП-оформление (Platega recurrent): показывать кнопку «Оформить с
+  // автооплатой СБП» рядом с покупкой с баланса
+  platega_recurrent_enabled?: boolean;
+  lava_recurrent_enabled?: boolean;
+  cashera_recurrent_enabled?: boolean;
 }
 
 export interface ClassicPurchaseOptions {
@@ -401,7 +444,17 @@ export interface Transaction {
 export interface PaymentMethodOption {
   id: string;
   name: string;
+  min_amount_kopeks?: number;
   description?: string | null;
+}
+
+export interface QuickAmountHint {
+  period_days: number;
+  discount_percent: number;
+  // Из суммы вычтен баланс пользователя
+  balance_deducted: boolean;
+  // Сумма подогнана под min/max способа — период не соответствует точно
+  clamped: boolean;
 }
 
 export interface PaymentMethod {
@@ -412,17 +465,33 @@ export interface PaymentMethod {
   max_amount_kopeks: number;
   is_available: boolean;
   options?: PaymentMethodOption[] | null;
+  quick_amounts?: number[];
+  // Пояснения по индексам quick_amounts; null/нет — статические суммы без подписей
+  quick_amount_hints?: QuickAmountHint[] | null;
+  // Если true — после получения payment_url кабинет сразу делает
+  // window.location.href вместо показа панели с кнопкой "Открыть".
+  open_url_direct?: boolean;
 }
 
 // Referral types
 export interface ReferralInfo {
   referral_code: string;
   referral_link: string;
+  bot_referral_link?: string;
   total_referrals: number;
   active_referrals: number;
   total_earnings_kopeks: number;
   total_earnings_rubles: number;
+  /**
+   * Days rewards are recorded with amount_kopeks = 0 by design, so they never
+   * show up in the money totals. Without this field a partner on a days-based
+   * programme sees a flat zero while rewards keep arriving.
+   */
+  total_earnings_days?: number;
   commission_percent: number;
+  available_balance_kopeks: number;
+  available_balance_rubles: number;
+  withdrawn_kopeks: number;
 }
 
 export interface ReferralTerms {
@@ -434,10 +503,165 @@ export interface ReferralTerms {
   first_topup_bonus_rubles: number;
   inviter_bonus_kopeks: number;
   inviter_bonus_rubles: number;
+  max_commission_payments: number;
   partner_section_visible?: boolean;
+  /**
+   * Under the `levels` scheme the flat fields above govern nothing: payouts come
+   * from the reward-level table. `level_descriptions` is generated server-side
+   * from the same config the payout engine reads, so the terms shown here cannot
+   * drift away from what is actually paid.
+   */
+  scheme?: 'legacy' | 'levels';
+  level_descriptions?: string[];
+  referee_bonus_description?: string | null;
+  max_level_depth?: number;
+  /**
+   * What a level number means. Under `chain` the listed levels apply at the same
+   * time, each paying a different person up the chain. Under `tiers` exactly ONE
+   * applies — the highest rank the partner has reached — and only the direct
+   * referrer is ever paid, so the same list must not be read as cumulative.
+   */
+  levels_mode?: ReferralLevelsMode;
+  /** The viewer's own rank. Only meaningful under `tiers`. */
+  tier_current_level?: number | null;
+  tier_next_level?: number | null;
+  tier_next_remaining?: number;
+  tier_referrals_any?: number;
+  tier_referrals_active?: number;
+  /**
+   * Programme levels broken into parts, ordered the way they should be shown:
+   * by number under `chain`, by ascending threshold under `tiers`. Built by the
+   * same server code that formats the bot's text, so the two cannot drift apart.
+   */
+  levels?: ReferralProgramLevel[];
+  /** The partner's personal rate when it overrides the level's own percent. */
+  personal_percent?: number | null;
+  /**
+   * What the user is allowed to choose. Until an administrator allows it the
+   * settings card is not shown at all: a choice that changes nothing promises
+   * an influence it does not have.
+   */
+  allow_reward_kind_choice?: boolean;
+  allow_days_target_choice?: boolean;
+  /** 'money' | 'days' | null — null means "whatever the level gives". */
+  reward_preference?: string | null;
+  days_target_subscription_id?: number | null;
+  days_target_options?: ReferralDaysTargetOption[];
+  /**
+   * What each side of the choice actually gives, computed without regard to the
+   * choice already made: the cards must show what every option yields, not only
+   * the selected one. null means the rule has no such side.
+   */
+  reward_choice_money?: string | null;
+  reward_choice_days?: string | null;
+}
+
+/** A subscription the reward days can be directed to. */
+export interface ReferralDaysTargetOption {
+  id: number;
+  tariff_name: string | null;
+  /** Shown next to the name: several subscriptions may share a tariff. */
+  end_date: string | null;
+}
+
+/** One level of the referral programme, as shown to the user. */
+export interface ReferralProgramLevel {
+  level: number;
+  is_current: boolean;
+  /** Ready-made reward chips: "25% от суммы", "50 ₽", "7 дн. подписки (Про)". */
+  rewards: string[];
+  /** False means this level pays the referrer nothing — shown only when it is theirs. */
+  pays_referrer: boolean;
+  trigger: string;
+  trigger_label: string;
+  required_referrals: number;
+  required_referrals_active_only: boolean;
+  /** What the invited user gets at this level, or null. */
+  referee_reward: string | null;
+}
+
+/** Whether a level number is chain depth or a rank earned by referral count. */
+export type ReferralLevelsMode = 'chain' | 'tiers';
+
+/** A reward level of the referral chain, as edited in the admin cabinet. */
+export interface ReferralRewardLevel {
+  level: number;
+  is_active: boolean;
+  /** Which bonuses are active on this level. */
+  reward_mode: 'money' | 'days' | 'both';
+  trigger: 'registration' | 'first_topup' | 'every_topup';
+  referrer_percent: number | null;
+  referrer_fixed_kopeks: number | null;
+  referrer_days: number;
+  referrer_tariff_id: number | null;
+  referrer_tariff_name?: string | null;
+  referee_fixed_kopeks: number | null;
+  referee_days: number;
+  referee_tariff_id: number | null;
+  referee_tariff_name?: string | null;
+  max_payments: number;
+  /**
+   * How many referrals unlock this level; 0 means available from the start.
+   * The level NUMBER says whose top-up pays you (1 = someone you invited,
+   * 2 = someone they invited); this says when you start earning from that link
+   * at all — which is what "what do I get a level for" was missing.
+   */
+  required_referrals: number;
+  /** Count only referrals who topped up at least once. */
+  required_referrals_active_only: boolean;
+}
+
+export interface ReferralRewardTariffOption {
+  id: number;
+  name: string;
+}
+
+export interface ReferralRewardLevels {
+  scheme: 'legacy' | 'levels';
+  /** Pinned in .env: the switch would not apply and would lose on restart. */
+  scheme_locked_by_env: boolean;
+  /**
+   * Chain depth under `chain`; under `tiers` there is no chain and every level
+   * works as a rank, so this must not gate what is shown.
+   */
+  levels_mode: ReferralLevelsMode;
+  /** Pinned in .env: the switch would not apply and would lose on restart. */
+  levels_mode_locked_by_env: boolean;
+  /**
+   * With multi-tariff off, subscriptions carry no tariff and days aimed at one
+   * are never granted. The tariff dropdown is still full, so without this flag
+   * the setting looks valid and silently does nothing.
+   */
+  multi_tariff_enabled: boolean;
+  /** Pinned in .env: the depth field would be refused with 409 and revert on restart. */
+  max_level_depth_locked_by_env: boolean;
+  /** The chain is not walked deeper than this, so deeper levels never pay. */
+  max_level_depth: number;
+  max_supported_level: number;
+  levels: ReferralRewardLevel[];
+  /**
+   * Served with the levels rather than fetched from /admin/tariffs, which needs a
+   * different permission — an admin holding only partners:settings would otherwise
+   * see no tariff to pick, which is exactly the config where days are dropped.
+   */
+  available_tariffs: ReferralRewardTariffOption[];
+  /**
+   * What the legacy import could not express as a level — commission tiers have
+   * no equivalent here. Only ever populated by the import response; losing them
+   * silently would be worse than not importing them.
+   */
+  import_notes?: string[];
 }
 
 // Ticket types
+export interface TicketMediaItem {
+  type: 'photo' | 'video' | 'document';
+  file_id: string;
+  caption?: string | null;
+  /** Signed, expiring download token (response only). */
+  token?: string | null;
+}
+
 export interface TicketMessage {
   id: number;
   message_text: string;
@@ -445,7 +669,10 @@ export interface TicketMessage {
   has_media: boolean;
   media_type: string | null;
   media_file_id: string | null;
+  /** Signed, expiring download token for the legacy single media_file_id. */
+  media_token?: string | null;
   media_caption: string | null;
+  media_items?: TicketMediaItem[] | null;
   created_at: string;
 }
 
@@ -466,11 +693,38 @@ export interface TicketDetail extends Omit<Ticket, 'messages_count' | 'last_mess
   messages: TicketMessage[];
 }
 
+// Гейт согласия с офертой/политикой на экране первой авторизации.
+// documents — ключи документов, которые бэк реально требует отметить.
+export interface LegalConsentConfig {
+  required: boolean;
+  prechecked: boolean;
+  documents: string[];
+}
+
 export interface SupportConfig {
   tickets_enabled: boolean;
-  support_type: 'tickets' | 'profile' | 'url';
+  support_type: 'tickets' | 'profile' | 'url' | 'both';
   support_url?: string | null;
   support_username?: string | null;
+  /** Резолвнутый контакт ведёт в Telegram, а не на внешний хелпдеск. */
+  contact_is_telegram?: boolean;
+  /** Бэк требует анкету (`diagnostics`) при создании тикета. */
+  ticket_form_required?: boolean;
+  /** Варианты анкеты (устройства, приложения, место); нет у старого бэка. */
+  ticket_form_options?: TicketFormOptions | null;
+}
+
+export interface TicketFormPlatform {
+  id: string;
+  /** Локализованное имя по языку; `null` — берётся из i18n `support.form.platform.<id>`. */
+  name: Record<string, string> | null;
+}
+
+export interface TicketFormOptions {
+  platforms: TicketFormPlatform[];
+  /** Имена приложений по id устройства. */
+  apps: Record<string, string[]>;
+  locations: string[];
 }
 
 // Paginated response
@@ -487,7 +741,7 @@ export interface LocalizedText {
   [key: string]: string;
 }
 
-// RemnaWave format types
+// Remnawave format types
 export interface RemnawaveButtonClient {
   url?: string;
   link?: string;
@@ -530,7 +784,7 @@ export interface AppConfig {
     supportUrl?: string;
   };
 
-  // RemnaWave
+  // Remnawave
   isRemnawave?: boolean;
   svgLibrary?: Record<string, string | { svgString: string }>;
   baseTranslations?: Record<string, LocalizedText>;
@@ -544,6 +798,7 @@ export interface AppConfig {
 
 // Pending payment types
 export interface PendingPayment {
+  source?: 'provider' | 'landing';
   id: number;
   method: string;
   method_display: string;
@@ -561,6 +816,7 @@ export interface PendingPayment {
   user_id?: number;
   user_telegram_id?: number;
   user_username?: string | null;
+  user_email?: string | null;
 }
 
 export interface ManualCheckResponse {
@@ -570,6 +826,51 @@ export interface ManualCheckResponse {
   status_changed: boolean;
   old_status: string | null;
   new_status: string | null;
+}
+
+// Saved payment method (card) for recurrent payments
+export interface SavedCard {
+  id: number;
+  method_type: string;
+  card_last4: string | null;
+  card_type: string | null;
+  title: string | null;
+  created_at: string;
+}
+
+export interface SavedCardsResponse {
+  cards: SavedCard[];
+  recurrent_enabled: boolean;
+}
+
+// Platega SBP recurring auto-payment status for a subscription
+export interface SbpRecurringInfo {
+  status: string; // 'none' | 'PENDING' | 'ACTIVE' | 'PAST_DUE'
+  interval?: number; // 1=day,2=week,3=month,4=year
+  amount_kopeks?: number;
+  next_charge_at?: string | null;
+  redirect_url?: string | null;
+}
+
+/**
+ * Автопродление Lava. В отличие от Platega период задан продуктом в кабинете
+ * Lava и приезжает числом дней (charge_days), а не enum-интервалом.
+ */
+export interface LavaRecurringInfo {
+  status: string; // 'none' | 'PENDING' | 'ACTIVE' | 'PAST_DUE'
+  charge_days?: number;
+  amount_kopeks?: number;
+  next_charge_at?: string | null;
+  redirect_url?: string | null;
+}
+
+export interface CasheraRecurringInfo {
+  status: string; // 'none' | 'PENDING' | 'ACTIVE' | 'PAST_DUE'
+  charge_days?: number;
+  interval?: string; // daily | weekly | monthly | yearly
+  amount_kopeks?: number;
+  next_charge_at?: string | null;
+  redirect_url?: string | null;
 }
 
 // Ticket notifications types
@@ -600,6 +901,8 @@ export interface TicketSettings {
   support_system_mode: string;
   cabinet_user_notifications_enabled: boolean;
   cabinet_admin_notifications_enabled: boolean;
+  /** Поля, закреплённые в .env: из кабинета их не изменить. */
+  env_locked?: string[];
 }
 
 // Payment method config types (admin)
@@ -614,8 +917,11 @@ export interface PaymentMethodConfig {
   is_enabled: boolean;
   display_name: string | null;
   default_display_name: string;
+  description: string | null;
   sub_options: Record<string, boolean> | null;
   available_sub_options: PaymentMethodSubOptionInfo[] | null;
+  quick_amounts: number[] | null;
+  default_quick_amounts: number[];
   min_amount_kopeks: number | null;
   max_amount_kopeks: number | null;
   default_min_amount_kopeks: number;
@@ -624,6 +930,7 @@ export interface PaymentMethodConfig {
   first_topup_filter: 'any' | 'yes' | 'no';
   promo_group_filter_mode: 'all' | 'selected';
   allowed_promo_group_ids: number[];
+  open_url_direct: boolean;
   is_provider_configured: boolean;
   created_at: string | null;
   updated_at: string | null;
@@ -632,4 +939,72 @@ export interface PaymentMethodConfig {
 export interface PromoGroupSimple {
   id: number;
   name: string;
+}
+
+// Account Linking
+export interface LinkedProvider {
+  provider: string;
+  linked: boolean;
+  identifier: string | null;
+  /** Email that unlinking forgets: it came from this provider and no password makes it a login. */
+  forgets_email?: string | null;
+}
+
+export interface LinkBonusInfo {
+  /** true только если привязка реально добавит дни к платной подписке */
+  available: boolean;
+  days: number;
+}
+
+export interface LinkedProvidersResponse {
+  providers: LinkedProvider[];
+  /** Нет у старого бэкенда: отсутствие поля = бонуса нет. */
+  link_bonus?: LinkBonusInfo;
+}
+
+export interface LinkCallbackResponse {
+  success: boolean;
+  message: string | null;
+  merge_required: boolean;
+  merge_token: string | null;
+}
+
+export interface ServerCompleteResponse extends LinkCallbackResponse {
+  provider: string;
+}
+
+// Account Merge
+export interface MergeSubscriptionPreview {
+  status: string;
+  is_trial: boolean;
+  end_date: string | null;
+  traffic_limit_gb: number;
+  traffic_used_gb: number;
+  device_limit: number;
+  tariff_name: string | null;
+  autopay_enabled: boolean;
+}
+
+export interface MergeAccountPreview {
+  id: number;
+  username: string | null;
+  first_name: string | null;
+  email: string | null;
+  auth_methods: string[];
+  balance_kopeks: number;
+  subscription: MergeSubscriptionPreview | null;
+  created_at: string | null;
+}
+
+export interface MergePreviewResponse {
+  primary: MergeAccountPreview;
+  secondary: MergeAccountPreview;
+  expires_in_seconds: number;
+}
+
+export interface MergeResponse {
+  success: boolean;
+  access_token: string | null;
+  refresh_token: string | null;
+  user: User | null;
 }

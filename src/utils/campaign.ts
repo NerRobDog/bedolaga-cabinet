@@ -28,9 +28,7 @@ function clearSlug(): void {
   try {
     localStorage.removeItem(CAMPAIGN_KEY);
     localStorage.removeItem(CAMPAIGN_TTL_KEY);
-  } catch {
-    // localStorage unavailable
-  }
+  } catch {}
 }
 
 /**
@@ -52,9 +50,7 @@ export function captureCampaignFromUrl(): void {
     const newUrl =
       window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
     window.history.replaceState(null, '', newUrl);
-  } catch {
-    // localStorage or history API unavailable
-  }
+  } catch {}
 }
 
 /**

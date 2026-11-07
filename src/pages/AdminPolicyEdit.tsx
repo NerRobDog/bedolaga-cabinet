@@ -2,8 +2,15 @@ import { useState, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { rbacApi, AccessPolicy, CreatePolicyPayload, UpdatePolicyPayload } from '@/api/rbac';
+import {
+  rbacApi,
+  type AccessPolicy,
+  type CreatePolicyPayload,
+  type UpdatePolicyPayload,
+} from '@/api/rbac';
 import { AdminBackButton } from '@/components/admin';
+import { XIcon } from '@/components/icons';
+import { PageSkeleton, Skeleton } from '@/components/ui/skeleton';
 
 // === Types ===
 
@@ -150,15 +157,7 @@ function IpTagInput({ values, onChange }: IpTagInputProps) {
             className="text-dark-400 transition-colors hover:text-dark-200"
             aria-label={t('admin.policies.conditions.removeIp', { ip })}
           >
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <XIcon className="h-3 w-3" />
           </button>
         </span>
       ))}
@@ -167,7 +166,7 @@ function IpTagInput({ values, onChange }: IpTagInputProps) {
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        className="min-w-[120px] flex-1 bg-transparent text-sm text-dark-100 placeholder-dark-500 outline-none"
+        className="min-w-[120px] min-w-0 flex-1 bg-transparent text-sm text-dark-100 placeholder-dark-500 outline-none"
         placeholder={values.length === 0 ? t('admin.policies.conditions.ipPlaceholder') : ''}
       />
     </div>
@@ -320,7 +319,7 @@ export default function AdminPolicyEdit() {
   }, []);
 
   const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
+    (e: React.SyntheticEvent) => {
       e.preventDefault();
       setFormError(null);
 
@@ -376,9 +375,9 @@ export default function AdminPolicyEdit() {
   // Loading state
   if (isEdit && isLoadingPolicy) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-      </div>
+      <PageSkeleton variant="admin" leading={1} titleWidth="w-56" className="space-y-6">
+        <Skeleton variant="card" className="h-96" />
+      </PageSkeleton>
     );
   }
 
@@ -444,7 +443,7 @@ export default function AdminPolicyEdit() {
                   onClick={() => setFormData((prev) => ({ ...prev, effect: 'allow' }))}
                   className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                     formData.effect === 'allow'
-                      ? 'border-green-500/50 bg-green-500/10 text-green-400'
+                      ? 'border-success-500/50 bg-success-500/10 text-success-400'
                       : 'border-dark-600 bg-dark-900 text-dark-400 hover:border-dark-500'
                   }`}
                 >
@@ -455,7 +454,7 @@ export default function AdminPolicyEdit() {
                   onClick={() => setFormData((prev) => ({ ...prev, effect: 'deny' }))}
                   className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                     formData.effect === 'deny'
-                      ? 'border-red-500/50 bg-red-500/10 text-red-400'
+                      ? 'border-error-500/50 bg-error-500/10 text-error-400'
                       : 'border-dark-600 bg-dark-900 text-dark-400 hover:border-dark-500'
                   }`}
                 >
@@ -764,7 +763,7 @@ export default function AdminPolicyEdit() {
             <button
               type="submit"
               disabled={isSaving}
-              className="rounded-lg bg-accent-500 px-4 py-2 text-white transition-colors hover:bg-accent-600 disabled:opacity-50"
+              className="rounded-lg bg-accent-500 px-4 py-2 text-on-accent transition-colors hover:bg-accent-600 disabled:opacity-50"
             >
               {isSaving ? t('admin.policies.form.saving') : t('admin.policies.form.save')}
             </button>

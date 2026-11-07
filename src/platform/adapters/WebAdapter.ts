@@ -12,7 +12,6 @@ import type {
   HapticNotificationType,
 } from '@/platform/types';
 
-// Storage key for local storage fallback
 const STORAGE_PREFIX = 'bedolaga_';
 
 function createCapabilities(): PlatformCapabilities {
@@ -133,6 +132,10 @@ function createThemeController(): ThemeController {
       // No-op in web - no bottom bar to sync
     },
 
+    setBackgroundColor(_color: string) {
+      // В вебе фон под страницей и есть сама страница — красить нечего
+    },
+
     getThemeParams() {
       return null;
     },
@@ -154,7 +157,6 @@ function createCloudStorageController(): CloudStorageController {
       try {
         localStorage.setItem(STORAGE_PREFIX + key, value);
       } catch {
-        // Storage might be full or disabled
         console.warn('Failed to save to localStorage:', key);
       }
     },
@@ -203,11 +205,11 @@ export function createWebAdapter(): PlatformContext {
     },
 
     openLink(url: string, _options?: { tryInstantView?: boolean }) {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(url, '_blank', 'noopener');
     },
 
     openTelegramLink(url: string) {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(url, '_blank', 'noopener');
     },
 
     async share(text: string, url?: string): Promise<boolean> {
@@ -240,6 +242,21 @@ export function createWebAdapter(): PlatformContext {
       } else {
         window.onbeforeunload = null;
       }
+    },
+
+    async downloadFile(url: string, fileName: string) {
+      // Сервер отдаёт файл вложением — переход по ссылке скачивает его, не уводя со страницы.
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.rel = 'noopener';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    },
+
+    hideKeyboard() {
+      // В браузере клавиатуру закрывает потеря фокуса полем.
     },
   };
 }

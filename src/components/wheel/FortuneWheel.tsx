@@ -1,19 +1,46 @@
 import { useEffect, useRef, useState, memo } from 'react';
 import type { WheelPrize } from '../../api/wheel';
 
+const SIZE = 400;
+const CENTER = SIZE / 2;
+const SPIN_DURATION_MS = 5000;
+/** Пять полных оборотов до целевого сектора. */
+const SPIN_EXTRA_TURNS_DEG = 1800;
+
+// Та же кривая, что раньше стояла в CSS-переходе: cubic-bezier(0.15, 0.6, 0.1, 1).
+const [EASE_X1, EASE_Y1, EASE_X2, EASE_Y2] = [0.15, 0.6, 0.1, 1];
+
+function bezierAxis(a1: number, a2: number, t: number): number {
+  return (((1 - 3 * a2 + 3 * a1) * t + (3 * a2 - 6 * a1)) * t + 3 * a1) * t;
+}
+
+function bezierSlope(a1: number, a2: number, t: number): number {
+  return 3 * (1 - 3 * a2 + 3 * a1) * t * t + 2 * (3 * a2 - 6 * a1) * t + 3 * a1;
+}
+
+/** Доля пути по времени 0..1 → доля поворота 0..1. */
+export function spinEasing(x: number): number {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  let t = x;
+  for (let i = 0; i < 8; i += 1) {
+    const slope = bezierSlope(EASE_X1, EASE_X2, t);
+    if (slope === 0) break;
+    t -= (bezierAxis(EASE_X1, EASE_X2, t) - x) / slope;
+  }
+  return bezierAxis(EASE_Y1, EASE_Y2, Math.min(1, Math.max(0, t)));
+}
+
+function rotateAttr(angle: number): string {
+  return `rotate(${angle} ${CENTER} ${CENTER})`;
+}
+
 interface FortuneWheelProps {
   prizes: WheelPrize[];
   isSpinning: boolean;
   targetRotation: number | null;
   onSpinComplete: () => void;
 }
-
-// Pre-generate sparkle positions to avoid recalculating on each render
-const SPARKLE_POSITIONS = Array.from({ length: 8 }, (_, i) => ({
-  top: `${20 + ((i * 10) % 60)}%`,
-  left: `${15 + ((i * 13) % 70)}%`,
-  delay: `${i * 0.15}s`,
-}));
 
 const FortuneWheel = memo(function FortuneWheel({
   prizes,
@@ -23,25 +50,41 @@ const FortuneWheel = memo(function FortuneWheel({
 }: FortuneWheelProps) {
   const wheelRef = useRef<SVGGElement>(null);
   const accumulatedRotation = useRef(0);
-  const [displayRotation, setDisplayRotation] = useState(0);
+  // Угол покоя: пока идёт спин, React рисует прежний угол и в DOM не лезет,
+  // атрибут ведёт кадр за кадром сам спин; по его концу угол покоя догоняет.
+  const [restAngle, setRestAngle] = useState(0);
+  const latestOnComplete = useRef(onSpinComplete);
+  latestOnComplete.current = onSpinComplete;
 
   useEffect(() => {
-    if (isSpinning && targetRotation !== null && wheelRef.current) {
-      const currentPos = accumulatedRotation.current % 360;
-      let delta = targetRotation - currentPos;
-      // Normalize delta to positive
-      while (delta < 0) delta += 360;
-      const newRotation = accumulatedRotation.current + 1800 + delta;
-      accumulatedRotation.current = newRotation;
-      setDisplayRotation(newRotation);
+    if (!isSpinning || targetRotation === null) return;
+    const group = wheelRef.current;
+    if (!group) return;
+    const from = accumulatedRotation.current;
+    let delta = targetRotation - (from % 360);
+    while (delta < 0) delta += 360;
+    const to = from + SPIN_EXTRA_TURNS_DEG + delta;
+    accumulatedRotation.current = to;
 
-      const timeout = setTimeout(() => {
-        onSpinComplete();
-      }, 5000);
-
-      return () => clearTimeout(timeout);
-    }
-  }, [isSpinning, targetRotation, onSpinComplete]);
+    // Крутим SVG-атрибутом по requestAnimationFrame, а не CSS-transform с переходом:
+    // CSS-transform на <g> заводит отдельный композитный слой, и Android WebView на
+    // части устройств (Xiaomi 12, 17.09.2026) рисует его плитки чёрными квадратами
+    // поверх секторов. Атрибут рисуется вместе со всем SVG — компоновать нечего.
+    const started = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - started) / SPIN_DURATION_MS);
+      group.setAttribute('transform', rotateAttr(from + (to - from) * spinEasing(progress)));
+      if (progress < 1) {
+        frame = requestAnimationFrame(tick);
+        return;
+      }
+      setRestAngle(to);
+      latestOnComplete.current();
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isSpinning, targetRotation]);
 
   if (prizes.length === 0) {
     return (
@@ -51,8 +94,8 @@ const FortuneWheel = memo(function FortuneWheel({
     );
   }
 
-  const size = 400;
-  const center = size / 2;
+  const size = SIZE;
+  const center = CENTER;
   const outerRadius = size / 2 - 20;
   const innerRadius = outerRadius - 15;
   const prizeRadius = innerRadius - 5;
@@ -206,20 +249,25 @@ const FortuneWheel = memo(function FortuneWheel({
             <filter id="textShadow" x="-20%" y="-20%" width="140%" height="140%">
               <feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="#000" floodOpacity="0.7" />
             </filter>
+
+            {/* LED glow as a soft gradient instead of a CSS blur. CSS filters on
+                cx/cy-positioned SVG elements mis-render under the spin's GPU
+                compositing — phantom streaks toward the centre that are often
+                invisible in screen recordings but visible live. */}
+            <radialGradient id="ledGlowGrad">
+              <stop offset="0%" stopColor="#FEF08A" stopOpacity="0.95" />
+              <stop offset="45%" stopColor="#FDE047" stopOpacity="0.55" />
+              <stop offset="100%" stopColor="#FDE047" stopOpacity="0" />
+            </radialGradient>
+
+            {/* SVG-native emoji shadow (not a CSS filter) for the same reason */}
+            <filter id="emojiShadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#000" floodOpacity="0.5" />
+            </filter>
           </defs>
 
           {/* Background shadow */}
           <circle cx={center} cy={center + 6} r={outerRadius + 5} fill="rgba(0,0,0,0.3)" />
-
-          {/* Outer decorative ring */}
-          <circle
-            cx={center}
-            cy={center}
-            r={outerRadius}
-            fill="none"
-            stroke="url(#ringGrad)"
-            strokeWidth="15"
-          />
 
           {/* Inner ring border */}
           <circle
@@ -231,63 +279,8 @@ const FortuneWheel = memo(function FortuneWheel({
             strokeWidth="2"
           />
 
-          {/* LED chase animation — pure CSS, no React re-renders */}
-          <style>
-            {`
-              @keyframes ledChase {
-                0%, 100% { fill: #374151; stroke: #1F2937; }
-                10%, 30% { fill: #FEF08A; stroke: #FDE047; }
-              }
-              @keyframes ledGlow {
-                0%, 100% { opacity: 0; }
-                10%, 30% { opacity: 0.4; }
-              }
-              .led-dot { animation: ledChase 6s linear infinite; }
-              .led-glow { opacity: 0; animation: ledGlow 6s linear infinite; }
-              .led-spinning .led-dot { animation-duration: 2s; }
-              .led-spinning .led-glow { animation-duration: 2s; }
-            `}
-          </style>
-          <g className={isSpinning ? 'led-spinning' : undefined}>
-            {Array.from({ length: 20 }).map((_, i) => {
-              const angle = (i * 18 - 90) * (Math.PI / 180);
-              const ledRadius = outerRadius + 3;
-              const dotX = center + ledRadius * Math.cos(angle);
-              const dotY = center + ledRadius * Math.sin(angle);
-              // Delay as fraction of full cycle — CSS handles speed via animation-duration
-              const delay = `${(i / 20) * 6}s`;
-              return (
-                <g key={`led-${i}`}>
-                  <circle
-                    className="led-glow"
-                    cx={dotX}
-                    cy={dotY}
-                    r={5}
-                    fill="#FEF08A"
-                    style={{ filter: 'blur(2px)', animationDelay: delay }}
-                  />
-                  <circle
-                    className="led-dot"
-                    cx={dotX}
-                    cy={dotY}
-                    r={3.5}
-                    strokeWidth="1"
-                    style={{ animationDelay: delay }}
-                  />
-                </g>
-              );
-            })}
-          </g>
-
-          {/* Rotating wheel group */}
-          <g
-            ref={wheelRef}
-            style={{
-              transformOrigin: `${center}px ${center}px`,
-              transform: `rotate(${displayRotation}deg)`,
-              transition: isSpinning ? 'transform 5s cubic-bezier(0.15, 0.6, 0.1, 1)' : 'none',
-            }}
-          >
+          {/* Rotating wheel group — угол атрибутом, см. эффект спина выше */}
+          <g ref={wheelRef} transform={rotateAttr(restAngle)}>
             {/* Sectors */}
             {prizes.map((prize, index) => (
               <path
@@ -331,7 +324,7 @@ const FortuneWheel = memo(function FortuneWheel({
                   dominantBaseline="middle"
                   fontSize={prizes.length <= 6 ? '32' : '26'}
                   transform={`rotate(${pos.rotation}, ${pos.x}, ${pos.y})`}
-                  style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.5))' }}
+                  filter="url(#emojiShadow)"
                 >
                   {prize.emoji}
                 </text>
@@ -339,6 +332,72 @@ const FortuneWheel = memo(function FortuneWheel({
             })}
 
             {/* Prize content - Text removed, only emoji visible on wheel */}
+          </g>
+
+          {/* Обод и лампочки рисуются ПОСЛЕ вращающейся группы. Они с ней не
+              пересекаются (сектора кончаются на prizeRadius, обод начинается
+              дальше), поэтому на вид порядок безразличен. Но у группы есть
+              CSS-transform, и Android WebView на части устройств (Xiaomi 12,
+              17.09.2026) выносит её в отдельный слой, чьи прозрачные пиксели
+              «пробивают» всё, что нарисовано ниже, до подложки Telegram: обод
+              пропадал везде, где его накрывал квадрат группы. Выше группы обод
+              ничем не накрыт. */}
+          {/* Outer decorative ring */}
+          <circle
+            cx={center}
+            cy={center}
+            r={outerRadius}
+            fill="none"
+            stroke="url(#ringGrad)"
+            strokeWidth="15"
+          />
+
+          {/* LED chase animation — pure CSS, no React re-renders */}
+          <style>
+            {`
+              @keyframes ledChase {
+                0%, 100% { fill: #374151; stroke: #1F2937; }
+                10%, 30% { fill: #FEF08A; stroke: #FDE047; }
+              }
+              @keyframes ledGlow {
+                0%, 100% { fill-opacity: 0; }
+                10%, 30% { fill-opacity: 0.4; }
+              }
+              .led-dot { animation: ledChase 6s linear infinite; }
+              .led-glow { fill-opacity: 0; animation: ledGlow 6s linear infinite; }
+              .led-spinning .led-dot { animation-duration: 2s; }
+              .led-spinning .led-glow { animation-duration: 2s; }
+            `}
+          </style>
+          <g className={isSpinning ? 'led-spinning' : undefined}>
+            {Array.from({ length: 20 }).map((_, i) => {
+              const angle = (i * 18 - 90) * (Math.PI / 180);
+              const ledRadius = outerRadius + 3;
+              const dotX = center + ledRadius * Math.cos(angle);
+              const dotY = center + ledRadius * Math.sin(angle);
+              // Delay as fraction of full cycle — CSS handles speed via animation-duration
+              const delay = `${(i / 20) * 6}s`;
+              return (
+                <g key={`led-${i}`}>
+                  <circle
+                    className="led-glow"
+                    cx={dotX}
+                    cy={dotY}
+                    r={9}
+                    fill="url(#ledGlowGrad)"
+                    style={{ animationDelay: delay }}
+                  />
+                  <circle
+                    className="led-dot"
+                    cx={dotX}
+                    cy={dotY}
+                    r={3.5}
+                    strokeWidth="1"
+                    style={{ animationDelay: delay }}
+                  />
+                </g>
+              );
+            })}
           </g>
 
           {/* Center hub */}
@@ -400,25 +459,6 @@ const FortuneWheel = memo(function FortuneWheel({
           />
         )}
       </div>
-
-      {/* Sparkle effects when spinning - optimized with pre-calculated positions */}
-      {isSpinning && (
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          {SPARKLE_POSITIONS.map((pos, i) => (
-            <div
-              key={`sparkle-${i}`}
-              className="absolute h-2 w-2 animate-ping rounded-full bg-yellow-300"
-              style={{
-                top: pos.top,
-                left: pos.left,
-                animationDelay: pos.delay,
-                animationDuration: '1.5s',
-                opacity: 0.7,
-              }}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 });

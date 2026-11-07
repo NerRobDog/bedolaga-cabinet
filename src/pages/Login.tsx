@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
 import { useShallow } from 'zustand/shallow';
 import { authApi } from '../api/auth';
+import type { PasskeySignupResponse, RecoveryLoginResponse } from '../api/passkey';
 import { isValidEmail } from '../utils/validation';
 import {
   brandingApi,
@@ -15,16 +16,28 @@ import {
   type BrandingInfo,
   type EmailAuthEnabled,
 } from '../api/branding';
-import { getAndClearReturnUrl } from '../utils/token';
+import { getAndClearReturnUrl, tokenStorage } from '../utils/token';
+import { getApiErrorCode, getApiErrorMessage } from '../utils/api-error';
 import { isInTelegramWebApp, getTelegramInitData, useTelegramSDK } from '../hooks/useTelegramSDK';
+import { closeMiniApp } from '@telegram-apps/sdk-react';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import TelegramLoginButton from '../components/TelegramLoginButton';
 import OAuthProviderIcon from '../components/OAuthProviderIcon';
-import { saveOAuthState } from './OAuthCallback';
-import { consumeReferralCode, getPendingReferralCode } from '../utils/referral';
+import { saveOAuthState } from '../utils/oauth';
+import { getPendingReferralCode } from '../utils/referral';
+import { UsersIcon, EmailIcon, RefreshIcon, ChevronDownIcon } from '@/components/icons';
+import { CheckEmailCard } from '@/components/auth/CheckEmailCard';
+import LegalConsent from '../components/LegalConsent';
+import LegalConsentGate from '../components/LegalConsentGate';
+import PasskeyAuth from '../components/auth/PasskeyAuth';
+import RecoveryCodesPanel from '../components/auth/RecoveryCodesPanel';
+import { useLegalConsentGate } from '../hooks/useLegalConsentGate';
+import { infoApi } from '../api/info';
+import type { AuthResponse, LegalConsentConfig } from '../types';
+import { safeLocal, safeSession } from '../utils/safeStorage';
 
 export default function Login() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const {
@@ -33,6 +46,7 @@ export default function Login() {
     loginWithTelegram,
     loginWithEmail,
     registerWithEmail,
+    acceptAuthResponse,
   } = useAuthStore(
     useShallow((state) => ({
       isAuthenticated: state.isAuthenticated,
@@ -40,6 +54,7 @@ export default function Login() {
       loginWithTelegram: state.loginWithTelegram,
       loginWithEmail: state.loginWithEmail,
       registerWithEmail: state.registerWithEmail,
+      acceptAuthResponse: state.acceptAuthResponse,
     })),
   );
 
@@ -63,7 +78,28 @@ export default function Login() {
   const [forgotPasswordSent, setForgotPasswordSent] = useState(false);
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   const [forgotPasswordError, setForgotPasswordError] = useState('');
-  const [showEmailForm, setShowEmailForm] = useState(() => !!referralCode);
+  const [showEmailForm, setShowEmailForm] = useState(true);
+
+  // Аккаунт, созданный passkey: открытые резервные коды живут ТОЛЬКО здесь, в состоянии. Сессию
+  // открываем после экрана с кодами, поэтому до «Продолжить» стор считает человека не вошедшим.
+  const [pendingSignup, setPendingSignup] = useState<PasskeySignupResponse | null>(null);
+  const [acceptingSignup, setAcceptingSignup] = useState(false);
+  const [signupError, setSignupError] = useState('');
+  // Куда вести после входа, если это не обычный возврат: вход по резервному коду ведёт в настройки.
+  const postLoginTargetRef = useRef<{ to: string; state?: unknown } | null>(null);
+
+  // Гейт согласия с офертой/политикой для НОВОГО пользователя. Конфиг публичный:
+  // нужен до авторизации, чтобы нарисовать чекбоксы ещё на экране входа.
+  const { data: legalConsent } = useQuery<LegalConsentConfig>({
+    queryKey: ['legal-consent-config', i18n.language],
+    queryFn: () => infoApi.getLegalConsentConfig(i18n.language),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  // Telegram-вход происходит сам собой, поэтому чекбоксы показываем только когда
+  // бэк ответил 428: пользователь новый и без согласия аккаунт не создастся.
+  // Гейт помнит, какой именно вход повторить после простановки галочек.
+  const consent = useLegalConsentGate(legalConsent);
 
   // Telegram safe area insets
   const { safeAreaInset, contentSafeAreaInset } = useTelegramSDK();
@@ -95,6 +131,7 @@ export default function Login() {
       const data = await brandingApi.getBranding();
       setCachedBranding(data);
       await preloadLogo(data);
+      setLogoUrl(brandingApi.getLogoUrl(data));
       return data;
     },
     staleTime: 60000,
@@ -127,16 +164,21 @@ export default function Login() {
       const { authorize_url, state } = await authApi.getOAuthAuthorizeUrl(provider);
 
       // Validate redirect URL — only allow HTTPS to prevent open redirect
+      let parsed: URL;
       try {
-        const parsed = new URL(authorize_url);
-        if (parsed.protocol !== 'https:') {
-          throw new Error('Invalid OAuth redirect URL');
-        }
+        parsed = new URL(authorize_url);
       } catch {
         throw new Error('Invalid OAuth redirect URL');
       }
+      if (parsed.protocol !== 'https:') {
+        throw new Error('Invalid OAuth redirect URL');
+      }
 
-      saveOAuthState(state, provider);
+      if (!saveOAuthState(state, provider)) {
+        // Уйти к провайдеру без сохранённого state — значит гарантированно не
+        // вернуться в логин: та же ошибка, что и раньше, но без потери страницы.
+        throw new Error('OAuth state is not persistable');
+      }
       window.location.href = authorize_url;
     } catch {
       setError(t('auth.oauthError', 'Authorization was denied or failed'));
@@ -144,28 +186,36 @@ export default function Login() {
     }
   };
 
-  const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || '';
-
-  // If email auth is disabled but user came with ref param, redirect to bot
-  useEffect(() => {
-    if (referralCode && emailAuthConfig?.enabled === false && botUsername) {
-      consumeReferralCode();
-      window.location.href = `https://t.me/${botUsername}?start=${encodeURIComponent(referralCode)}`;
-    }
-  }, [referralCode, emailAuthConfig, botUsername]);
-
   const appName = branding ? branding.name : import.meta.env.VITE_APP_NAME || 'VPN';
   const appLogo = branding?.logo_letter || import.meta.env.VITE_APP_LOGO || 'V';
-  const logoUrl = branding ? brandingApi.getLogoUrl(branding) : null;
+  const [logoUrl, setLogoUrl] = useState<string | null>(() =>
+    branding ? brandingApi.getLogoUrl(branding) : null,
+  );
 
-  // Set document title
   useEffect(() => {
-    document.title = appName || 'VPN';
-  }, [appName]);
+    let active = true;
+    if (!branding?.has_custom_logo) {
+      setLogoUrl(null);
+      return;
+    }
+    // Query data may be identical to the cached branding. The blob finishing
+    // still needs its own state update, without waiting for a form interaction.
+    void preloadLogo(branding).then(() => {
+      if (active) setLogoUrl(brandingApi.getLogoUrl(branding));
+    });
+    return () => {
+      active = false;
+    };
+  }, [branding]);
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate(getReturnUrl(), { replace: true });
+      const target = postLoginTargetRef.current;
+      if (target) {
+        navigate(target.to, { replace: true, state: target.state });
+      } else {
+        navigate(getReturnUrl(), { replace: true });
+      }
     }
   }, [isAuthenticated, navigate, getReturnUrl]);
 
@@ -177,24 +227,37 @@ export default function Login() {
     if (isAuthInitializing) return;
 
     const tryTelegramAuth = async () => {
-      const initData = getTelegramInitData();
-      if (!isInTelegramWebApp() || !initData) return;
+      const initialInitData = getTelegramInitData();
+      if (!isInTelegramWebApp() || !initialInitData) return;
 
       setIsTelegramWebApp(true);
       setIsLoading(true);
 
       const MAX_RETRIES = 1;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        // The bridge may deliver fresh launch data while a rejected attempt waits.
+        // Keep this attempt's credential for any subsequent consent confirmation.
+        const initData = getTelegramInitData() || initialInitData;
         try {
           await loginWithTelegram(initData);
           navigate(getReturnUrl(), { replace: true });
           return;
         } catch (err) {
-          const error = err as { response?: { status?: number; data?: { detail?: string } } };
+          const error = err as { response?: { status?: number } };
           const status = error.response?.status;
-          const detail = error.response?.data?.detail;
+          const detail = getApiErrorMessage(err, '');
           if (import.meta.env.DEV)
             console.warn(`Telegram auth attempt ${attempt + 1} failed:`, status, detail);
+
+          // Не ошибка входа, а недостающее согласие: показываем чекбоксы.
+          const needsConsent = consent.capture(err, async (accepted) => {
+            await loginWithTelegram(initData, accepted);
+            navigate(getReturnUrl(), { replace: true });
+          });
+          if (needsConsent) {
+            setIsLoading(false);
+            return;
+          }
 
           if (status === 401 && attempt < MAX_RETRIES) {
             await new Promise((r) => setTimeout(r, 1500));
@@ -210,36 +273,26 @@ export default function Login() {
     };
 
     tryTelegramAuth();
-  }, [isAuthInitializing, loginWithTelegram, navigate, t, getReturnUrl]);
+  }, [isAuthInitializing, loginWithTelegram, navigate, t, getReturnUrl, consent.capture]);
 
-  // Manual retry for Telegram Mini App auth
-  const handleRetryTelegramAuth = async () => {
-    const initData = getTelegramInitData();
-    if (!initData) {
-      setError(t('auth.telegramRequired'));
-      return;
-    }
+  const handleRetryTelegramAuth = () => {
+    // Clear ALL cached auth state to prevent stale token/initData loops
+    tokenStorage.clearTokens();
+    safeSession.removeItem('tapps/launchParams');
+    safeSession.removeItem('telegram_init_data');
+    safeLocal.removeItem('cabinet-auth');
+    safeLocal.removeItem('tg_user_id');
 
-    setError('');
-    setIsLoading(true);
     try {
-      await loginWithTelegram(initData);
-      navigate(getReturnUrl(), { replace: true });
-    } catch (err) {
-      const error = err as { response?: { status?: number; data?: { detail?: string } } };
-      const status = error.response?.status;
-      const detail = error.response?.data?.detail;
-      if (import.meta.env.DEV) console.warn('Telegram auth retry failed:', status, detail);
-      setError(
-        detail ||
-          t('auth.telegramRetryFailed', 'Authorization failed. Close the app and try again.'),
-      );
-    } finally {
-      setIsLoading(false);
+      // Close miniapp — Telegram will provide fresh initData on reopen
+      closeMiniApp();
+    } catch {
+      // If closeMiniApp fails, force a clean page reload
+      window.location.reload();
     }
   };
 
-  const handleEmailSubmit = async (e: React.FormEvent) => {
+  const handleEmailSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setError('');
 
@@ -273,19 +326,51 @@ export default function Login() {
           password,
           firstName || undefined,
           referralCode || undefined,
+          consent.acceptedKeys,
         );
         // Show "check your email" screen
         setRegisteredEmail(result.email);
       }
     } catch (err: unknown) {
-      const error = err as { response?: { status?: number; data?: { detail?: string } } };
+      const error = err as { response?: { status?: number } };
       const status = error.response?.status;
-      const detail = error.response?.data?.detail;
+      const detail = getApiErrorMessage(err, '');
 
-      if (status === 400 && detail?.includes('already registered')) {
+      // Конфиг чекбоксов мог протухнуть (админ включил гейт между загрузкой страницы
+      // и отправкой формы) — показываем недостающие галочки вместо сырой ошибки.
+      const needsConsent = consent.capture(err, async (accepted) => {
+        const retried = await registerWithEmail(
+          email,
+          password,
+          firstName || undefined,
+          referralCode || undefined,
+          accepted,
+        );
+        setRegisteredEmail(retried.email);
+      });
+      if (needsConsent) {
+        setIsLoading(false);
+        return;
+      }
+
+      if (status === 403 && getApiErrorCode(err) === 'email_auth_disabled') {
+        setError(
+          t(
+            'auth.emailAuthDisabled',
+            'Email sign-in is disabled. Use another available sign-in method.',
+          ),
+        );
+      } else if (status === 403 && getApiErrorCode(err) === 'registration_invite_required') {
+        setError(
+          t(
+            'auth.registrationInviteRequired',
+            'Registration is by invitation only. Ask the service administrator for an invitation.',
+          ),
+        );
+      } else if (status === 400 && detail.includes('already registered')) {
         setError(t('auth.emailAlreadyRegistered', 'This email is already registered'));
       } else if (status === 401 || status === 403) {
-        if (detail?.includes('verify your email')) {
+        if (detail.includes('verify your email')) {
           setError(t('auth.emailNotVerified', 'Please verify your email first'));
         } else {
           setError(t('auth.invalidCredentials', 'Invalid email or password'));
@@ -300,7 +385,7 @@ export default function Login() {
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setForgotPasswordError('');
 
@@ -314,11 +399,37 @@ export default function Login() {
       await authApi.forgotPassword(forgotPasswordEmail.trim());
       setForgotPasswordSent(true);
     } catch (err: unknown) {
-      const error = err as { response?: { status?: number; data?: { detail?: string } } };
-      const detail = error.response?.data?.detail;
-      setForgotPasswordError(detail || t('common.error'));
+      setForgotPasswordError(getApiErrorMessage(err, t('common.error')));
     } finally {
       setForgotPasswordLoading(false);
+    }
+  };
+
+  const handlePasskeyAuthenticated = async (response: AuthResponse) => {
+    await acceptAuthResponse(response);
+    navigate(getReturnUrl(), { replace: true });
+  };
+
+  // Вход по резервному коду — аварийный путь: сразу ведём туда, где можно добавить новый passkey.
+  const handleRecoveryLogin = async (response: RecoveryLoginResponse) => {
+    const target = { to: '/profile/accounts', state: { recoveryLogin: response.recovery_login } };
+    postLoginTargetRef.current = target;
+    await acceptAuthResponse(response);
+    navigate(target.to, { replace: true, state: target.state });
+  };
+
+  const handleSignupContinue = async () => {
+    if (!pendingSignup) return;
+    setSignupError('');
+    setAcceptingSignup(true);
+    try {
+      await acceptAuthResponse(pendingSignup);
+      setPendingSignup(null);
+      navigate(getReturnUrl(), { replace: true });
+    } catch (err) {
+      setSignupError(getApiErrorMessage(err, t('common.error')));
+    } finally {
+      setAcceptingSignup(false);
     }
   };
 
@@ -339,9 +450,10 @@ export default function Login() {
           safeBottom > 0 ? `${safeBottom + 16}px` : 'calc(1rem + env(safe-area-inset-bottom, 0px))',
       }}
     >
-      {/* Background gradient */}
-      <div className="fixed inset-0 bg-gradient-to-br from-dark-950 via-dark-900 to-dark-950" />
-      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-accent-500/10 via-transparent to-transparent" />
+      {/* Flat background — the previous two layered gradients (linear
+          + accent radial halo) read as the airdrop / crypto aesthetic
+          PRODUCT.md explicitly anti-references. Body bg-dark-950 carries
+          the surface alone. */}
 
       {/* Language switcher */}
       <div
@@ -379,149 +491,136 @@ export default function Login() {
           {referralCode && isEmailAuthEnabled && (
             <div className="mt-3 rounded-xl border border-accent-500/30 bg-accent-500/10 p-2.5">
               <div className="flex items-center justify-center gap-2 text-accent-400">
-                <svg
-                  className="h-4 w-4 flex-shrink-0"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"
-                  />
-                </svg>
+                <UsersIcon className="h-4 w-4 flex-shrink-0" />
                 <span className="text-xs font-medium">{t('auth.referralInvite')}</span>
               </div>
             </div>
           )}
         </div>
 
-        {/* Check Email Screen */}
-        {registeredEmail ? (
-          <div className="card text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-success-500/20">
-              <svg
-                className="h-7 w-7 text-success-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
-                />
-              </svg>
-            </div>
-            <h2 className="mb-2 text-lg font-bold text-dark-50">
-              {t('auth.checkEmail', 'Check your email')}
-            </h2>
-            <p className="mb-3 text-sm text-dark-400">
-              {t('auth.verificationSent', 'We sent a verification link to:')}
-            </p>
-            <p className="mb-4 text-sm font-medium text-accent-400">{registeredEmail}</p>
-            <p className="mb-5 text-xs text-dark-500">
-              {t(
-                'auth.clickLinkToVerify',
-                'Click the link in the email to verify your account and log in.',
-              )}
-            </p>
-            <button
-              onClick={() => {
-                setRegisteredEmail(null);
-                setAuthMode('login');
-              }}
-              className="btn-secondary w-full"
-            >
-              {t('auth.backToLogin', 'Back to login')}
-            </button>
+        {/* Аккаунт создан passkey: резервные коды показываются один раз, сессия — после них */}
+        {pendingSignup ? (
+          <div className="card">
+            <RecoveryCodesPanel
+              codes={pendingSignup.recovery_codes}
+              appName={appName}
+              busy={acceptingSignup}
+              onContinue={handleSignupContinue}
+            />
+            {signupError && (
+              <p role="alert" className="mt-4 text-sm text-error-400">
+                {signupError}
+              </p>
+            )}
           </div>
+        ) : /* Экран согласия: бэк ответил 428 на автоматический Telegram-вход или регистрацию */
+        consent.pending ? (
+          <LegalConsentGate gate={consent} />
+        ) : /* Check Email Screen */
+        registeredEmail ? (
+          <CheckEmailCard
+            email={registeredEmail}
+            onBackToLogin={() => {
+              setRegisteredEmail(null);
+              setAuthMode('login');
+            }}
+            onChangeEmail={() => {
+              // Адрес остаётся в поле: чаще всего его не меняют, а правят опечатку.
+              setEmail(registeredEmail);
+              setRegisteredEmail(null);
+              setAuthMode('register');
+              setShowEmailForm(true);
+            }}
+          />
         ) : (
           /* Main auth card */
           <div className="card">
             {error && (
-              <div className="mb-4 rounded-xl border border-error-500/30 bg-error-500/10 px-4 py-2.5 text-sm text-error-400">
+              <div
+                role="alert"
+                className="mb-4 rounded-xl border border-error-500/30 bg-error-500/10 px-4 py-2.5 text-sm text-error-400"
+              >
                 {error}
               </div>
             )}
 
-            {/* Telegram auth section */}
-            <div className="space-y-3">
-              {isLoading && isTelegramWebApp ? (
-                <div className="py-6 text-center">
-                  <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-                  <p className="text-sm text-dark-400">{t('auth.authenticating')}</p>
-                </div>
-              ) : isTelegramWebApp && error ? (
-                <div className="space-y-3 text-center">
-                  <button
-                    onClick={handleRetryTelegramAuth}
-                    className="btn-primary mx-auto flex items-center gap-2 px-5 py-2.5"
-                  >
-                    <svg
-                      className="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+            {/* Порядок: вход через бота, passkey, Telegram, Google, ссылки passkey */}
+            <PasskeyAuth
+              onAuthenticated={handlePasskeyAuthenticated}
+              onRecoveryLogin={handleRecoveryLogin}
+              onSignedUp={setPendingSignup}
+              consent={consent}
+              disabled={isLoading}
+            >
+              {({ login, more }) => (
+                <>
+                  {/* Telegram auth section */}
+                  <div className="space-y-3">
+                    {isLoading && isTelegramWebApp ? (
+                      <div className="py-6 text-center">
+                        <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
+                        <p className="text-sm text-dark-400">{t('auth.authenticating')}</p>
+                      </div>
+                    ) : isTelegramWebApp && error ? (
+                      <div className="space-y-3 text-center">
+                        <button
+                          onClick={handleRetryTelegramAuth}
+                          className="btn-primary mx-auto flex items-center gap-2 px-5 py-2.5"
+                        >
+                          <RefreshIcon className="h-4 w-4" />
+                          {t('auth.tryAgain')}
+                        </button>
+                        <p className="text-xs text-dark-500">
+                          {t(
+                            'auth.telegramReopenHint',
+                            'If the problem persists, close and reopen the app',
+                          )}
+                        </p>
+                      </div>
+                    ) : (
+                      <TelegramLoginButton
+                        referralCode={referralCode || undefined}
+                        afterBot={login}
                       />
-                    </svg>
-                    {t('auth.tryAgain')}
-                  </button>
-                  <p className="text-xs text-dark-500">
-                    {t(
-                      'auth.telegramReopenHint',
-                      'If the problem persists, close and reopen the app',
                     )}
-                  </p>
-                </div>
-              ) : (
-                <TelegramLoginButton
-                  botUsername={botUsername}
-                  referralCode={referralCode || undefined}
-                />
-              )}
-            </div>
+                  </div>
 
-            {/* OAuth providers - compact icon row */}
-            {oauthProviders.length > 0 && (
-              <>
-                <div className="my-4 flex items-center gap-3">
-                  <div className="h-px flex-1 bg-dark-700" />
-                  <span className="text-xs text-dark-500">{t('auth.or', 'or')}</span>
-                  <div className="h-px flex-1 bg-dark-700" />
-                </div>
-                <div className="flex items-stretch gap-2">
-                  {oauthProviders.map((provider) => (
-                    <button
-                      key={provider.name}
-                      type="button"
-                      onClick={() => handleOAuthLogin(provider.name)}
-                      disabled={oauthLoading !== null}
-                      className="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-xl border border-dark-700 bg-dark-800/80 py-2.5 transition-all hover:border-dark-600 hover:bg-dark-700 disabled:opacity-50"
-                      title={provider.display_name}
-                    >
-                      {oauthLoading === provider.name ? (
-                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-dark-400 border-t-white" />
-                      ) : (
-                        <OAuthProviderIcon provider={provider.name} className="h-5 w-5" />
-                      )}
-                      <span className="text-[10px] leading-none text-dark-500">
-                        {provider.display_name}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+                  {/* OAuth providers - compact icon row */}
+                  {oauthProviders.length > 0 && (
+                    <>
+                      <div className="my-4 flex items-center gap-3">
+                        <div className="h-px flex-1 bg-dark-700" />
+                        <span className="text-xs text-dark-500">{t('auth.or', 'or')}</span>
+                        <div className="h-px flex-1 bg-dark-700" />
+                      </div>
+                      <div className="flex items-stretch gap-2">
+                        {oauthProviders.map((provider) => (
+                          <button
+                            key={provider.name}
+                            type="button"
+                            onClick={() => handleOAuthLogin(provider.name)}
+                            disabled={oauthLoading !== null}
+                            className="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-xl border border-dark-700 bg-dark-800/80 py-2.5 transition-all hover:border-dark-600 hover:bg-dark-700 disabled:opacity-50"
+                            title={provider.display_name}
+                          >
+                            {oauthLoading === provider.name ? (
+                              <span className="h-5 w-5 animate-spin rounded-full border-2 border-dark-400 border-t-white" />
+                            ) : (
+                              <OAuthProviderIcon provider={provider.name} className="h-5 w-5" />
+                            )}
+                            <span className="text-[10px] leading-none text-dark-500">
+                              {provider.display_name}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {more}
+                </>
+              )}
+            </PasskeyAuth>
 
             {/* Email auth section - collapsible */}
             {isEmailAuthEnabled && (
@@ -533,29 +632,11 @@ export default function Login() {
                     onClick={() => setShowEmailForm(!showEmailForm)}
                     className="flex items-center gap-1.5 rounded-full border border-dark-700 bg-dark-800/60 px-3.5 py-1.5 text-xs font-medium text-dark-300 transition-all hover:border-dark-600 hover:bg-dark-700 hover:text-dark-200"
                   >
-                    <svg
-                      className="h-3.5 w-3.5 text-dark-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={1.5}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
-                      />
-                    </svg>
+                    <EmailIcon className="h-3.5 w-3.5 text-dark-400" />
                     <span>{t('auth.loginWithEmail')}</span>
-                    <svg
+                    <ChevronDownIcon
                       className={`h-3 w-3 text-dark-400 transition-transform duration-300 ${showEmailForm ? 'rotate-180' : ''}`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2.5}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
+                    />
                   </button>
                   <div className="h-px flex-1 bg-dark-700" />
                 </div>
@@ -574,19 +655,7 @@ export default function Login() {
                         forgotPasswordSent ? (
                           <div className="space-y-4 text-center">
                             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-success-500/20">
-                              <svg
-                                className="h-6 w-6 text-success-400"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth={1.5}
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
-                                />
-                              </svg>
+                              <EmailIcon className="h-6 w-6 text-success-400" />
                             </div>
                             <p className="text-sm font-medium text-dark-100">
                               {t('auth.checkEmail', 'Check your email')}
@@ -596,6 +665,11 @@ export default function Login() {
                                 'auth.passwordResetSent',
                                 'If an account exists with this email, we sent password reset instructions.',
                               )}
+                            </p>
+                            {/* Тот же тупик, что и после регистрации: письма нет,
+                                и человек не знает, где смотреть. */}
+                            <p className="rounded-xl border border-dark-700 bg-dark-800/60 p-3 text-left text-xs leading-relaxed text-dark-400">
+                              {t('auth.spamHint')}
                             </p>
                             <button
                               type="button"
@@ -665,7 +739,7 @@ export default function Login() {
                               type="button"
                               className={`flex-1 rounded-md py-2 text-sm font-medium transition-all ${
                                 authMode === 'login'
-                                  ? 'bg-accent-500 text-white'
+                                  ? 'bg-accent-500 text-on-accent'
                                   : 'text-dark-400 hover:text-dark-200'
                               }`}
                               onClick={() => setAuthMode('login')}
@@ -676,7 +750,7 @@ export default function Login() {
                               type="button"
                               className={`flex-1 rounded-md py-2 text-sm font-medium transition-all ${
                                 authMode === 'register'
-                                  ? 'bg-accent-500 text-white'
+                                  ? 'bg-accent-500 text-on-accent'
                                   : 'text-dark-400 hover:text-dark-200'
                               }`}
                               onClick={() => setAuthMode('register')}
@@ -741,6 +815,16 @@ export default function Login() {
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                               />
+                              {authMode === 'register' &&
+                                password.length > 0 &&
+                                password.length < 8 && (
+                                  <p className="mt-1.5 text-xs text-error-400">
+                                    {t(
+                                      'auth.passwordTooShort',
+                                      'Password must be at least 8 characters',
+                                    )}
+                                  </p>
+                                )}
                             </div>
 
                             {authMode === 'register' && (
@@ -762,9 +846,21 @@ export default function Login() {
                               </div>
                             )}
 
+                            {authMode === 'register' && (
+                              <LegalConsent
+                                documents={consent.documents}
+                                accepted={consent.accepted}
+                                onChange={consent.toggle}
+                                disabled={isLoading}
+                                className="pt-1"
+                              />
+                            )}
+
                             <button
                               type="submit"
-                              disabled={isLoading}
+                              disabled={
+                                isLoading || (authMode === 'register' && !consent.allAccepted)
+                              }
                               className="btn-primary w-full py-2.5"
                             >
                               {isLoading ? (

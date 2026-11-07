@@ -1,150 +1,56 @@
-import { useState, useRef, useEffect } from 'react';
+import { uiLocale } from '@/utils/uiLocale';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { ticketsApi } from '../api/tickets';
+import { MessageMediaGrid } from '../components/tickets/MessageMediaGrid';
 import { infoApi } from '../api/info';
 import { useAuthStore } from '../store/auth';
 import { logger } from '../utils/logger';
 import { checkRateLimit, getRateLimitResetTime, RATE_LIMIT_KEYS } from '../utils/rateLimit';
-import type { TicketDetail, TicketMessage } from '../types';
+import { getApiErrorMessage } from '../utils/api-error';
+import { isDiagnosticsRequired, isOpenTicketConflict } from '../utils/ticketErrors';
+import {
+  buildDiagnostics,
+  isDiagnosticsComplete,
+  pruneAnswers,
+  resolveTicketFormOptions,
+  missingDiagnosticsQuestions,
+  type DiagnosticsAnswers,
+} from '../utils/ticketDiagnostics';
+import { DiagnosticsForm } from '@/components/support/DiagnosticsForm';
+import type { SupportConfig, TicketDetail } from '../types';
 import { Card } from '@/components/data-display/Card';
 import { Button } from '@/components/primitives/Button';
 import { staggerContainer, staggerItem } from '@/components/motion/transitions';
+import { ChatIcon, CloseIcon, ImageIcon, PlusIcon, SendIcon } from '@/components/icons';
 import { usePlatform } from '@/platform';
+import { linkifyText } from '../utils/linkify';
+import { resolveSupportContact } from '../utils/supportContact';
+import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton';
 
 const log = logger.createLogger('Support');
 
-const PlusIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-  </svg>
-);
-
-const SendIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
-    />
-  </svg>
-);
-
-const ImageIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
-    />
-  </svg>
-);
-
-const CloseIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
+const MEDIA_TYPES: Record<string, 'photo' | 'video'> = {
+  'image/jpeg': 'photo',
+  'image/png': 'photo',
+  'image/gif': 'photo',
+  'image/webp': 'photo',
+  'video/mp4': 'video',
+  'video/webm': 'video',
+  'video/quicktime': 'video',
+};
 
 // Media attachment state
 interface MediaAttachment {
+  id: string;
   file: File;
   preview: string;
+  mediaType: 'photo' | 'video';
   uploading: boolean;
   fileId?: string;
   error?: string;
-}
-
-// Message media display component
-function MessageMedia({ message, t }: { message: TicketMessage; t: (key: string) => string }) {
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageError, setImageError] = useState(false);
-  const [showFullImage, setShowFullImage] = useState(false);
-
-  if (!message.has_media || !message.media_file_id) {
-    return null;
-  }
-
-  const mediaUrl = ticketsApi.getMediaUrl(message.media_file_id);
-
-  if (message.media_type === 'photo') {
-    return (
-      <>
-        <div className="relative mt-3">
-          {!imageLoaded && !imageError && (
-            <div className="flex h-48 w-full animate-pulse items-center justify-center rounded-lg bg-dark-700">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-            </div>
-          )}
-          {imageError ? (
-            <div className="flex h-32 w-full items-center justify-center rounded-lg bg-dark-700 text-sm text-dark-400">
-              {t('support.imageLoadFailed')}
-            </div>
-          ) : (
-            <img
-              src={mediaUrl}
-              alt={message.media_caption || 'Attached image'}
-              className={`max-h-64 max-w-full cursor-pointer rounded-lg transition-opacity hover:opacity-90 ${imageLoaded ? '' : 'hidden'}`}
-              onLoad={() => setImageLoaded(true)}
-              onError={() => setImageError(true)}
-              onClick={() => setShowFullImage(true)}
-            />
-          )}
-          {message.media_caption && (
-            <p className="mt-1 text-xs text-dark-400">{message.media_caption}</p>
-          )}
-        </div>
-
-        {/* Full image modal */}
-        {showFullImage && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
-            onClick={() => setShowFullImage(false)}
-          >
-            <button
-              className="absolute right-4 top-4 text-white/70 hover:text-white"
-              onClick={() => setShowFullImage(false)}
-            >
-              <CloseIcon />
-            </button>
-            <img
-              src={mediaUrl}
-              alt={message.media_caption || 'Attached image'}
-              className="max-h-full max-w-full object-contain"
-            />
-          </div>
-        )}
-      </>
-    );
-  }
-
-  // For documents/videos - show download link
-  return (
-    <div className="mt-3">
-      <a
-        href={mediaUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-2 rounded-lg bg-dark-700 px-3 py-2 text-sm text-dark-200 transition-colors hover:bg-dark-600"
-      >
-        <svg
-          className="h-4 w-4"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-          />
-        </svg>
-        {message.media_caption || `Download ${message.media_type}`}
-      </a>
-    </div>
-  );
 }
 
 export default function Support() {
@@ -154,45 +60,62 @@ export default function Support() {
   const isAdmin = useAuthStore((state) => state.isAdmin);
   const queryClient = useQueryClient();
   const { openTelegramLink, openLink } = usePlatform();
+
+  const openSupportContact = useCallback(
+    (config: SupportConfig) => {
+      const target = resolveSupportContact(config);
+      if (!target) return;
+      if (target.kind === 'external') {
+        openLink(target.url, { tryInstantView: false });
+      } else {
+        openTelegramLink(target.url);
+      }
+    },
+    [openLink, openTelegramLink],
+  );
   const [selectedTicket, setSelectedTicket] = useState<TicketDetail | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newMessage, setNewMessage] = useState('');
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsAnswers>({});
   const [replyMessage, setReplyMessage] = useState('');
-  const [rateLimitError, setRateLimitError] = useState<string | null>(null);
+  // Ошибка активной формы: и клиентский rate-limit, и отказ бэка (409 «уже есть
+  // открытый тикет», 403 «поддержка выключена/пользователь заблокирован» и т.п.).
+  // Формы create и reply взаимоисключающие, поэтому состояние одно на обе.
+  const [formError, setFormError] = useState<string | null>(null);
 
-  // Media attachment states
-  const [createAttachment, setCreateAttachment] = useState<MediaAttachment | null>(null);
-  const [replyAttachment, setReplyAttachment] = useState<MediaAttachment | null>(null);
+  // Media attachment states (multi-upload, up to 10)
+  const [createAttachments, setCreateAttachments] = useState<MediaAttachment[]>([]);
+  const [replyAttachments, setReplyAttachments] = useState<MediaAttachment[]>([]);
   const createFileInputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Растёт на «Новый тикет» и выборе обращения: панель надо показать, даже если форма уже открыта.
+  const [panelFocus, setPanelFocus] = useState(0);
   const replyFileInputRef = useRef<HTMLInputElement>(null);
-  const createPreviewRef = useRef<string | null>(null);
-  const replyPreviewRef = useRef<string | null>(null);
 
-  // Revoke blob URLs on unmount to prevent memory leaks
+  const blobUrlsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
-    const createRef = createPreviewRef;
-    const replyRef = replyPreviewRef;
+    const urls = blobUrlsRef;
     return () => {
-      if (createRef.current) URL.revokeObjectURL(createRef.current);
-      if (replyRef.current) URL.revokeObjectURL(replyRef.current);
+      urls.current.forEach((u) => URL.revokeObjectURL(u));
     };
   }, []);
 
-  const clearCreateAttachment = () => {
-    if (createPreviewRef.current) {
-      URL.revokeObjectURL(createPreviewRef.current);
-      createPreviewRef.current = null;
-    }
-    clearCreateAttachment();
+  const clearCreateAttachments = () => {
+    createAttachments.forEach((a) => {
+      if (a.preview) URL.revokeObjectURL(a.preview);
+    });
+    setCreateAttachments([]);
+    if (createFileInputRef.current) createFileInputRef.current.value = '';
   };
 
-  const clearReplyAttachment = () => {
-    if (replyPreviewRef.current) {
-      URL.revokeObjectURL(replyPreviewRef.current);
-      replyPreviewRef.current = null;
-    }
-    clearReplyAttachment();
+  const clearReplyAttachments = () => {
+    replyAttachments.forEach((a) => {
+      if (a.preview) URL.revokeObjectURL(a.preview);
+    });
+    setReplyAttachments([]);
+    if (replyFileInputRef.current) replyFileInputRef.current.value = '';
   };
 
   // Get support configuration
@@ -200,6 +123,28 @@ export default function Support() {
     queryKey: ['support-config'],
     queryFn: infoApi.getSupportConfig,
   });
+
+  // На телефоне панель (форма или открытое обращение) стоит над списком: после выбора
+  // обращения внизу списка её надо показать, иначе клиент не видит, что оно открылось.
+  useEffect(() => {
+    if (!showCreateForm && !selectedTicket) return;
+    const el = panelRef.current;
+    if (!el) return;
+    const { top } = el.getBoundingClientRect();
+    if (top < 0 || top > window.innerHeight * 0.6) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [showCreateForm, selectedTicket?.id, panelFocus, configLoading]);
+
+  // Конфиг не загрузился — анкету не показываем, но если бэк ответит 422 по
+  // diagnostics, включаем её принудительно и просим заполнить.
+  const [serverWantsForm, setServerWantsForm] = useState(false);
+  const formRequired = supportConfig?.ticket_form_required === true || serverWantsForm;
+  const formOptions = useMemo(() => resolveTicketFormOptions(supportConfig), [supportConfig]);
+  // Опции пришли или обновились после того, как пользователь уже выбрал: убираем устаревшие ответы.
+  useEffect(() => {
+    setDiagnostics((prev) => pruneAnswers(prev, formOptions));
+  }, [formOptions]);
 
   const { data: tickets, isLoading } = useQuery({
     queryKey: ['tickets'],
@@ -213,93 +158,116 @@ export default function Support() {
     enabled: !!selectedTicket,
   });
 
-  // Handle file selection
+  // Handle file selection (multi-upload)
   const handleFileSelect = async (
     file: File,
-    setAttachment: (a: MediaAttachment | null) => void,
+    setAttachments: React.Dispatch<React.SetStateAction<MediaAttachment[]>>,
   ) => {
-    // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-      setAttachment({
-        file,
-        preview: '',
-        uploading: false,
-        error: t('support.invalidFileType'),
-      });
-      return;
-    }
+    const mediaType = MEDIA_TYPES[file.type];
+    if (!mediaType) return;
+    if (file.size > 10 * 1024 * 1024) return;
 
-    // Validate file size (10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      setAttachment({
-        file,
-        preview: '',
-        uploading: false,
-        error: t('support.fileTooLarge'),
-      });
-      return;
-    }
-
-    // Revoke old blob URL before creating new one
-    const previewRef = setAttachment === setCreateAttachment ? createPreviewRef : replyPreviewRef;
-    if (previewRef.current) URL.revokeObjectURL(previewRef.current);
-    const preview = URL.createObjectURL(file);
-    previewRef.current = preview;
-    setAttachment({ file, preview, uploading: true });
+    const preview = mediaType === 'photo' ? URL.createObjectURL(file) : '';
+    if (preview) blobUrlsRef.current.add(preview);
+    const id =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `att_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const entry: MediaAttachment = { id, file, preview, mediaType, uploading: true };
+    setAttachments((prev) => (prev.length >= 10 ? prev : [...prev, entry]));
 
     try {
-      const result = await ticketsApi.uploadMedia(file, 'photo');
-      setAttachment({
-        file,
-        preview,
-        uploading: false,
-        fileId: result.file_id,
-      });
+      const result = await ticketsApi.uploadMedia(file, mediaType);
+      setAttachments((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, uploading: false, fileId: result.file_id } : a)),
+      );
     } catch {
-      setAttachment({
-        file,
-        preview,
-        uploading: false,
-        error: t('support.uploadFailed'),
-      });
+      setAttachments((prev) =>
+        prev.map((a) =>
+          a.id === id ? { ...a, uploading: false, error: t('support.uploadFailed') } : a,
+        ),
+      );
     }
   };
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const media = createAttachment?.fileId
-        ? {
-            media_type: 'photo',
-            media_file_id: createAttachment.fileId,
-          }
-        : undefined;
-      return ticketsApi.createTicket(newTitle, newMessage, media);
+      const ready = createAttachments.filter(
+        (a): a is MediaAttachment & { fileId: string } => !!a.fileId,
+      );
+      const media =
+        ready.length > 0
+          ? {
+              media_type: ready[0].mediaType,
+              media_file_id: ready[0].fileId,
+              media_items: ready.map((a) => ({ type: a.mediaType, file_id: a.fileId })),
+            }
+          : undefined;
+      return ticketsApi.createTicket(
+        newTitle,
+        newMessage,
+        media,
+        formRequired ? (buildDiagnostics(diagnostics, formOptions) ?? undefined) : undefined,
+      );
     },
     onSuccess: (ticket) => {
       queryClient.invalidateQueries({ queryKey: ['tickets'] });
       setShowCreateForm(false);
+      setFormError(null);
       setNewTitle('');
       setNewMessage('');
-      clearCreateAttachment();
+      setDiagnostics({});
+      clearCreateAttachments();
       setSelectedTicket(ticket);
+    },
+    onError: (error) => {
+      // Без этого отказ бэка (чаще всего 409 «уже есть открытый тикет») уходил
+      // в никуда: форма просто оставалась на месте, и пользователь жал «Отправить»
+      // снова и снова, не понимая, почему обращение не создаётся.
+      log.error('Ticket creation failed', error);
+      if (isDiagnosticsRequired(error)) {
+        setServerWantsForm(true);
+        queryClient.invalidateQueries({ queryKey: ['support-config'] });
+        setFormError(t('support.form.requiredByServer'));
+        return;
+      }
+      if (isOpenTicketConflict(error)) {
+        setFormError(t('support.errors.alreadyOpenTicket'));
+        // Открытый тикет мог появиться в другой сессии (бот, второе устройство) —
+        // подтягиваем список, чтобы пользователю было куда перейти.
+        queryClient.invalidateQueries({ queryKey: ['tickets'] });
+        return;
+      }
+      setFormError(getApiErrorMessage(error, t('support.errors.createFailed')));
     },
   });
 
   const replyMutation = useMutation({
     mutationFn: async () => {
-      const media = replyAttachment?.fileId
-        ? {
-            media_type: 'photo',
-            media_file_id: replyAttachment.fileId,
-          }
-        : undefined;
-      return ticketsApi.addMessage(selectedTicket!.id, replyMessage, media);
+      const ready = replyAttachments.filter(
+        (a): a is MediaAttachment & { fileId: string } => !!a.fileId,
+      );
+      const media =
+        ready.length > 0
+          ? {
+              media_type: ready[0].mediaType,
+              media_file_id: ready[0].fileId,
+              media_items: ready.map((a) => ({ type: a.mediaType, file_id: a.fileId })),
+            }
+          : undefined;
+      await ticketsApi.addMessage(selectedTicket!.id, replyMessage, media);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ticket', selectedTicket?.id] });
+      setFormError(null);
       setReplyMessage('');
-      clearReplyAttachment();
+      clearReplyAttachments();
+    },
+    onError: (error) => {
+      // Ответ в тикет молчал ровно так же: 403 (блокировка в поддержке) и 400
+      // (тикет уже закрыт) выглядели как «кнопка не работает».
+      log.error('Ticket reply failed', error);
+      setFormError(getApiErrorMessage(error, t('support.errors.replyFailed')));
     },
   });
 
@@ -325,9 +293,9 @@ export default function Support() {
   // Show loading while checking configuration
   if (configLoading) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-      </div>
+      <SkeletonGroup className="space-y-3">
+        <Skeleton variant="card" count={3} className="h-16" />
+      </SkeletonGroup>
     );
   }
 
@@ -335,65 +303,29 @@ export default function Support() {
   if (supportConfig && !supportConfig.tickets_enabled) {
     log.debug('Tickets disabled, config:', supportConfig);
 
+    // Куда и чем открывать контакт — один резолв на весь блок. null → открывать
+    // нечего (пустой/битый конфиг), и кнопку тогда не рендерим вовсе.
+    const contact = resolveSupportContact(supportConfig);
+
     const getSupportMessage = () => {
       log.debug('Getting support message for type:', supportConfig.support_type);
 
-      if (supportConfig.support_type === 'profile') {
-        const supportUsername = supportConfig.support_username || '@support';
-        log.debug('Opening profile:', supportUsername);
-        return {
-          title: isAdmin ? t('support.ticketsDisabled') : t('support.title'),
-          message: t('support.contactSupport', { username: supportUsername }),
-          buttonText: t('support.contactUs'),
-          buttonAction: () => {
-            log.debug('Button clicked, opening:', supportUsername);
-
-            // Extract username without @
-            const username = supportUsername.startsWith('@')
-              ? supportUsername.slice(1)
-              : supportUsername;
-
-            const webUrl = `https://t.me/${username}`;
-            log.debug('Web URL:', webUrl);
-
-            // Use platform's openTelegramLink
-            openTelegramLink(webUrl);
-          },
-        };
-      }
+      const title = isAdmin ? t('support.ticketsDisabled') : t('support.title');
 
       if (supportConfig.support_type === 'url' && supportConfig.support_url) {
         return {
-          title: isAdmin ? t('support.ticketsDisabled') : t('support.title'),
+          title,
           message: t('support.useExternalLink'),
           buttonText: t('support.openSupport'),
-          buttonAction: () => {
-            openLink(supportConfig.support_url!, { tryInstantView: false });
-          },
         };
       }
 
-      // Fallback: contact support (should not normally happen if config is correct)
+      // profile и любой fallback — контакт в телеграме
       const supportUsername = supportConfig.support_username || '@support';
-      log.debug('Fallback: Opening profile:', supportUsername);
       return {
-        title: isAdmin ? t('support.ticketsDisabled') : t('support.title'),
+        title,
         message: t('support.contactSupport', { username: supportUsername }),
         buttonText: t('support.contactUs'),
-        buttonAction: () => {
-          log.debug('Fallback button clicked, opening:', supportUsername);
-
-          // Extract username without @
-          const username = supportUsername.startsWith('@')
-            ? supportUsername.slice(1)
-            : supportUsername;
-
-          const webUrl = `https://t.me/${username}`;
-          log.debug('Fallback opening URL:', webUrl);
-
-          // Use platform's openTelegramLink
-          openTelegramLink(webUrl);
-        },
       };
     };
 
@@ -403,61 +335,65 @@ export default function Support() {
       <div className="mx-auto mt-12 max-w-md">
         <Card className="text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-dark-800">
-            <svg
-              className="h-8 w-8 text-dark-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
-              />
-            </svg>
+            <ChatIcon className="h-8 w-8 text-dark-400" />
           </div>
           <h2 className="mb-2 text-xl font-semibold text-dark-100">{supportMessage.title}</h2>
           <p className="mb-6 text-dark-400">{supportMessage.message}</p>
-          <Button onClick={supportMessage.buttonAction} fullWidth>
-            {supportMessage.buttonText}
-          </Button>
+          {contact && (
+            <Button onClick={() => openSupportContact(supportConfig)} fullWidth>
+              {supportMessage.buttonText}
+            </Button>
+          )}
         </Card>
       </div>
     );
   }
 
-  // Attachment preview component
-  const AttachmentPreview = ({
-    attachment,
+  // Attachments preview component
+  const AttachmentsPreview = ({
+    items,
     onRemove,
   }: {
-    attachment: MediaAttachment;
-    onRemove: () => void;
-  }) => (
-    <div className="relative mt-2 inline-block">
-      {attachment.preview && (
-        <img
-          src={attachment.preview}
-          alt="Attachment preview"
-          className="h-20 w-auto rounded-lg border border-dark-700"
-        />
-      )}
-      {attachment.uploading && (
-        <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-dark-900/70">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-        </div>
-      )}
-      {attachment.error && <div className="mt-1 text-xs text-red-400">{attachment.error}</div>}
-      <button
-        type="button"
-        onClick={onRemove}
-        className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
-      >
-        <CloseIcon />
-      </button>
-    </div>
-  );
+    items: MediaAttachment[];
+    onRemove: (idx: number) => void;
+  }) =>
+    items.length === 0 ? null : (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {items.map((att, idx) => (
+          <div key={idx} className="relative">
+            {att.preview ? (
+              <img
+                src={att.preview}
+                alt="Preview"
+                loading="lazy"
+                className="h-16 w-16 rounded-lg border border-dark-700 object-cover"
+              />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-dark-700 text-xs text-dark-400">
+                {att.file.name.slice(-6)}
+              </div>
+            )}
+            {att.uploading && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-dark-950/50">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
+              </div>
+            )}
+            {att.error && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-error-500/30">
+                <span className="text-xs text-error-300">!</span>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => onRemove(idx)}
+              className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-dark-600 text-dark-300 hover:bg-error-500 hover:text-white"
+            >
+              <CloseIcon className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    );
 
   return (
     <motion.div
@@ -475,7 +411,9 @@ export default function Support() {
           onClick={() => {
             setShowCreateForm(true);
             setSelectedTicket(null);
-            clearCreateAttachment();
+            setPanelFocus((n) => n + 1);
+            setFormError(null);
+            clearCreateAttachments();
           }}
         >
           <PlusIcon />
@@ -484,14 +422,338 @@ export default function Support() {
       </motion.div>
 
       <motion.div variants={staggerItem} className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Ticket Detail / Create Form */}
+        <div
+          ref={panelRef}
+          className={`scroll-mt-20 lg:order-2 lg:col-span-2 ${
+            showCreateForm || selectedTicket ? '' : 'hidden lg:block'
+          }`}
+        >
+          <Card className="h-full">
+            {showCreateForm ? (
+              <div>
+                <h2 className="mb-6 text-lg font-semibold text-dark-100">
+                  {t('support.createTicket')}
+                </h2>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setFormError(null);
+                    if (formRequired && !isDiagnosticsComplete(diagnostics, formOptions)) {
+                      setFormError(t('support.form.incomplete'));
+                      return;
+                    }
+                    // Rate limit: max 3 tickets per 60 seconds
+                    if (!checkRateLimit(RATE_LIMIT_KEYS.TICKET_CREATE, 3, 60000)) {
+                      const resetTime = getRateLimitResetTime(RATE_LIMIT_KEYS.TICKET_CREATE);
+                      setFormError(t('support.tooManyRequests', { seconds: resetTime }));
+                      return;
+                    }
+                    createMutation.mutate();
+                  }}
+                  className="space-y-4"
+                >
+                  {formRequired && (
+                    <DiagnosticsForm
+                      answers={diagnostics}
+                      onChange={setDiagnostics}
+                      options={formOptions}
+                    />
+                  )}
+                  <div>
+                    <label htmlFor="support-subject" className="label">
+                      {t('support.subject')}
+                    </label>
+                    <input
+                      id="support-subject"
+                      type="text"
+                      className="input"
+                      placeholder={t('support.subjectPlaceholder')}
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      required
+                      minLength={3}
+                      maxLength={255}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="support-message" className="label">
+                      {t('support.message')}
+                    </label>
+                    <textarea
+                      id="support-message"
+                      className="input min-h-[150px]"
+                      placeholder={t('support.messagePlaceholder')}
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      required
+                      minLength={10}
+                      maxLength={4000}
+                    />
+                  </div>
+
+                  {/* Media attachments for create */}
+                  <div>
+                    <input
+                      ref={createFileInputRef}
+                      type="file"
+                      accept={Object.keys(MEDIA_TYPES).join(',')}
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        files.forEach((file) => handleFileSelect(file, setCreateAttachments));
+                        e.target.value = '';
+                      }}
+                    />
+                    <AttachmentsPreview
+                      items={createAttachments}
+                      onRemove={(idx) =>
+                        setCreateAttachments((prev) => {
+                          const removed = prev[idx];
+                          if (removed?.preview) URL.revokeObjectURL(removed.preview);
+                          return prev.filter((_, i) => i !== idx);
+                        })
+                      }
+                    />
+                    {createAttachments.length < 10 && (
+                      <button
+                        type="button"
+                        onClick={() => createFileInputRef.current?.click()}
+                        disabled={createAttachments.some((a) => a.uploading)}
+                        className="mt-2 flex items-center gap-2 text-sm text-dark-400 transition-colors hover:text-dark-200 disabled:opacity-50"
+                      >
+                        <ImageIcon />
+                        {t('support.attachMedia')}{' '}
+                        {createAttachments.length > 0 && `(${createAttachments.length}/10)`}
+                      </button>
+                    )}
+                  </div>
+
+                  {formError && (
+                    <div className="rounded-xl border border-error-500/30 bg-error-500/10 p-3 text-sm text-error-400">
+                      {formError}
+                    </div>
+                  )}
+
+                  {formRequired &&
+                    missingDiagnosticsQuestions(diagnostics, formOptions).length > 0 && (
+                      <p
+                        id="diagnostics-missing"
+                        data-testid="diagnostics-missing"
+                        className="text-sm text-dark-300"
+                      >
+                        {t('support.form.missing', {
+                          list: missingDiagnosticsQuestions(diagnostics, formOptions).join(', '),
+                        })}
+                      </p>
+                    )}
+
+                  <div className="flex gap-3">
+                    <Button
+                      type="submit"
+                      aria-describedby={
+                        formRequired && !isDiagnosticsComplete(diagnostics, formOptions)
+                          ? 'diagnostics-missing'
+                          : undefined
+                      }
+                      disabled={
+                        createAttachments.some((a) => a.uploading) ||
+                        (formRequired && !isDiagnosticsComplete(diagnostics, formOptions))
+                      }
+                      loading={createMutation.isPending}
+                    >
+                      <SendIcon className="h-4 w-4" />
+                      <span className="ml-2">{t('support.send')}</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        setShowCreateForm(false);
+                        setFormError(null);
+                        clearCreateAttachments();
+                      }}
+                    >
+                      {t('common.cancel')}
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            ) : selectedTicket ? (
+              <div className="flex h-full flex-col">
+                <div className="mb-6 flex flex-col gap-2 border-b border-dark-800/50 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-dark-100">
+                      {ticketDetail?.title || selectedTicket.title}
+                    </h2>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span
+                        className={getStatusBadge(ticketDetail?.status || selectedTicket.status)}
+                      >
+                        {getStatusLabel(ticketDetail?.status || selectedTicket.status)}
+                      </span>
+                      <span className="text-xs text-dark-500">
+                        {t('support.created')}{' '}
+                        {new Date(selectedTicket.created_at).toLocaleDateString(uiLocale())}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Messages */}
+                {detailLoading ? (
+                  <SkeletonGroup className="space-y-3">
+                    <Skeleton variant="card" count={3} className="h-16" />
+                  </SkeletonGroup>
+                ) : ticketDetail?.messages ? (
+                  <div className="scrollbar-hide mb-6 max-h-96 flex-1 space-y-4 overflow-y-auto">
+                    {ticketDetail.messages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`rounded-xl p-4 ${
+                          msg.is_from_admin
+                            ? 'ml-4 border border-accent-500/20 bg-accent-500/10'
+                            : 'mr-4 border border-dark-700/30 bg-dark-800/50'
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center justify-between">
+                          <span
+                            className={`text-xs font-medium ${msg.is_from_admin ? 'text-accent-400' : 'text-dark-400'}`}
+                          >
+                            {msg.is_from_admin ? t('support.supportTeam') : t('support.you')}
+                          </span>
+                          <span className="text-xs text-dark-500">
+                            {new Date(msg.created_at).toLocaleString(uiLocale())}
+                          </span>
+                        </div>
+                        {msg.message_text && (
+                          <div
+                            className="whitespace-pre-wrap break-words text-dark-200 [&_a]:text-accent-400 [&_a]:underline"
+                            dangerouslySetInnerHTML={{ __html: linkifyText(msg.message_text) }}
+                          />
+                        )}
+                        {/* Display media if present */}
+                        <MessageMediaGrid
+                          message={msg}
+                          translateError={t('support.imageLoadFailed')}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {/* Reply Form */}
+                {ticketDetail?.status !== 'closed' && !ticketDetail?.is_reply_blocked && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      setFormError(null);
+                      // Rate limit: max 5 replies per 30 seconds
+                      if (!checkRateLimit(RATE_LIMIT_KEYS.TICKET_REPLY, 5, 30000)) {
+                        const resetTime = getRateLimitResetTime(RATE_LIMIT_KEYS.TICKET_REPLY);
+                        setFormError(t('support.tooManyRequests', { seconds: resetTime }));
+                        return;
+                      }
+                      replyMutation.mutate();
+                    }}
+                    className="border-t border-dark-800/50 pt-4"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex gap-3">
+                        <textarea
+                          className="input min-h-[80px] min-w-0 flex-1"
+                          placeholder={t('support.replyPlaceholder')}
+                          value={replyMessage}
+                          onChange={(e) => setReplyMessage(e.target.value)}
+                          maxLength={4000}
+                        />
+                      </div>
+
+                      {/* Media attachments for reply */}
+                      <div>
+                        <input
+                          ref={replyFileInputRef}
+                          type="file"
+                          accept={Object.keys(MEDIA_TYPES).join(',')}
+                          multiple
+                          className="hidden"
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            files.forEach((file) => handleFileSelect(file, setReplyAttachments));
+                            e.target.value = '';
+                          }}
+                        />
+                        <AttachmentsPreview
+                          items={replyAttachments}
+                          onRemove={(idx) =>
+                            setReplyAttachments((prev) => {
+                              const removed = prev[idx];
+                              if (removed?.preview) URL.revokeObjectURL(removed.preview);
+                              return prev.filter((_, i) => i !== idx);
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        {replyAttachments.length < 10 && (
+                          <button
+                            type="button"
+                            onClick={() => replyFileInputRef.current?.click()}
+                            disabled={replyAttachments.some((a) => a.uploading)}
+                            className="flex items-center gap-2 text-sm text-dark-400 transition-colors hover:text-dark-200 disabled:opacity-50"
+                          >
+                            <ImageIcon />
+                            {t('support.attachMedia')}{' '}
+                            {replyAttachments.length > 0 && `(${replyAttachments.length}/10)`}
+                          </button>
+                        )}
+
+                        <Button
+                          type="submit"
+                          disabled={
+                            (!replyMessage.trim() &&
+                              replyAttachments.filter((a) => a.fileId).length === 0) ||
+                            replyAttachments.some((a) => a.uploading)
+                          }
+                          loading={replyMutation.isPending}
+                        >
+                          <SendIcon className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {formError && (
+                        <div className="mt-2 rounded-lg border border-error-500/30 bg-error-500/10 p-2 text-sm text-error-400">
+                          {formError}
+                        </div>
+                      )}
+                    </div>
+                  </form>
+                )}
+
+                {ticketDetail?.is_reply_blocked && (
+                  <div className="border-t border-dark-800/50 py-4 text-center text-sm text-dark-500">
+                    {t('support.repliesDisabled')}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-dark-800">
+                  <ChatIcon className="h-8 w-8 text-dark-500" />
+                </div>
+                <div className="text-dark-400">{t('support.selectTicket')}</div>
+              </div>
+            )}
+          </Card>
+        </div>
         {/* Tickets List */}
-        <Card className="lg:col-span-1">
+        <Card className="lg:order-1 lg:col-span-1">
           <h2 className="mb-4 text-lg font-semibold text-dark-100">{t('support.yourTickets')}</h2>
 
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-            </div>
+            <SkeletonGroup className="space-y-3">
+              <Skeleton variant="card" count={3} className="h-16" />
+            </SkeletonGroup>
           ) : tickets?.items && tickets.items.length > 0 ? (
             <div className="space-y-2">
               {tickets.items.map((ticket) => (
@@ -500,7 +762,9 @@ export default function Support() {
                   onClick={() => {
                     setSelectedTicket(ticket as unknown as TicketDetail);
                     setShowCreateForm(false);
-                    clearReplyAttachment();
+                    setPanelFocus((n) => n + 1);
+                    setFormError(null);
+                    clearReplyAttachments();
                   }}
                   className={`w-full rounded-bento border p-4 text-left transition-all ${
                     selectedTicket?.id === ticket.id
@@ -515,7 +779,7 @@ export default function Support() {
                     </span>
                   </div>
                   <div className="text-xs text-dark-500">
-                    {new Date(ticket.updated_at).toLocaleDateString()}
+                    {new Date(ticket.updated_at).toLocaleDateString(uiLocale())}
                   </div>
                 </button>
               ))}
@@ -523,288 +787,45 @@ export default function Support() {
           ) : (
             <div className="py-12 text-center">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-dark-800">
-                <svg
-                  className="h-8 w-8 text-dark-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
-                  />
-                </svg>
+                <ChatIcon className="h-8 w-8 text-dark-500" />
               </div>
               <div className="text-dark-400">{t('support.noTickets')}</div>
             </div>
           )}
         </Card>
-
-        {/* Ticket Detail / Create Form */}
-        <Card className="lg:col-span-2">
-          {showCreateForm ? (
-            <div>
-              <h2 className="mb-6 text-lg font-semibold text-dark-100">
-                {t('support.createTicket')}
-              </h2>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  setRateLimitError(null);
-                  // Rate limit: max 3 tickets per 60 seconds
-                  if (!checkRateLimit(RATE_LIMIT_KEYS.TICKET_CREATE, 3, 60000)) {
-                    const resetTime = getRateLimitResetTime(RATE_LIMIT_KEYS.TICKET_CREATE);
-                    setRateLimitError(t('support.tooManyRequests', { seconds: resetTime }));
-                    return;
-                  }
-                  createMutation.mutate();
-                }}
-                className="space-y-4"
-              >
-                <div>
-                  <label className="label">{t('support.subject')}</label>
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder={t('support.subjectPlaceholder')}
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    required
-                    minLength={3}
-                    maxLength={255}
-                  />
-                </div>
-                <div>
-                  <label className="label">{t('support.message')}</label>
-                  <textarea
-                    className="input min-h-[150px]"
-                    placeholder={t('support.messagePlaceholder')}
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    required
-                    minLength={10}
-                    maxLength={4000}
-                  />
-                </div>
-
-                {/* Image attachment for create */}
-                <div>
-                  <input
-                    ref={createFileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/gif,image/webp"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleFileSelect(file, setCreateAttachment);
-                      e.target.value = '';
-                    }}
-                  />
-                  {createAttachment ? (
-                    <AttachmentPreview
-                      attachment={createAttachment}
-                      onRemove={() => clearCreateAttachment()}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => createFileInputRef.current?.click()}
-                      className="flex items-center gap-2 text-sm text-dark-400 transition-colors hover:text-dark-200"
-                    >
-                      <ImageIcon />
-                      {t('support.attachImage')}
-                    </button>
-                  )}
-                </div>
-
-                {rateLimitError && (
-                  <div className="rounded-xl border border-error-500/30 bg-error-500/10 p-3 text-sm text-error-400">
-                    {rateLimitError}
-                  </div>
-                )}
-
-                <div className="flex gap-3">
-                  <Button
-                    type="submit"
-                    disabled={createAttachment?.uploading}
-                    loading={createMutation.isPending}
-                  >
-                    <SendIcon />
-                    <span className="ml-2">{t('support.send')}</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      setShowCreateForm(false);
-                      clearCreateAttachment();
-                    }}
-                  >
-                    {t('common.cancel')}
-                  </Button>
-                </div>
-              </form>
-            </div>
-          ) : selectedTicket ? (
-            <div className="flex h-full flex-col">
-              <div className="mb-6 flex flex-col gap-2 border-b border-dark-800/50 pb-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-dark-100">
-                    {ticketDetail?.title || selectedTicket.title}
-                  </h2>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className={getStatusBadge(ticketDetail?.status || selectedTicket.status)}>
-                      {getStatusLabel(ticketDetail?.status || selectedTicket.status)}
-                    </span>
-                    <span className="text-xs text-dark-500">
-                      {t('support.created')}{' '}
-                      {new Date(selectedTicket.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Messages */}
-              {detailLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-                </div>
-              ) : ticketDetail?.messages ? (
-                <div className="scrollbar-hide mb-6 max-h-96 flex-1 space-y-4 overflow-y-auto">
-                  {ticketDetail.messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`rounded-xl p-4 ${
-                        msg.is_from_admin
-                          ? 'ml-4 border border-accent-500/20 bg-accent-500/10'
-                          : 'mr-4 border border-dark-700/30 bg-dark-800/50'
-                      }`}
-                    >
-                      <div className="mb-2 flex items-center justify-between">
-                        <span
-                          className={`text-xs font-medium ${msg.is_from_admin ? 'text-accent-400' : 'text-dark-400'}`}
-                        >
-                          {msg.is_from_admin ? t('support.supportTeam') : t('support.you')}
-                        </span>
-                        <span className="text-xs text-dark-500">
-                          {new Date(msg.created_at).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="whitespace-pre-wrap text-dark-200">{msg.message_text}</div>
-                      {/* Display media if present */}
-                      <MessageMedia message={msg} t={t} />
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {/* Reply Form */}
-              {ticketDetail?.status !== 'closed' && !ticketDetail?.is_reply_blocked && (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    setRateLimitError(null);
-                    // Rate limit: max 5 replies per 30 seconds
-                    if (!checkRateLimit(RATE_LIMIT_KEYS.TICKET_REPLY, 5, 30000)) {
-                      const resetTime = getRateLimitResetTime(RATE_LIMIT_KEYS.TICKET_REPLY);
-                      setRateLimitError(t('support.tooManyRequests', { seconds: resetTime }));
-                      return;
-                    }
-                    replyMutation.mutate();
-                  }}
-                  className="border-t border-dark-800/50 pt-4"
-                >
-                  <div className="space-y-3">
-                    <div className="flex gap-3">
-                      <textarea
-                        className="input min-h-[80px] flex-1"
-                        placeholder={t('support.replyPlaceholder')}
-                        value={replyMessage}
-                        onChange={(e) => setReplyMessage(e.target.value)}
-                        required
-                        minLength={1}
-                        maxLength={4000}
-                      />
-                    </div>
-
-                    {/* Image attachment for reply */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <input
-                          ref={replyFileInputRef}
-                          type="file"
-                          accept="image/jpeg,image/png,image/gif,image/webp"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleFileSelect(file, setReplyAttachment);
-                            e.target.value = '';
-                          }}
-                        />
-                        {replyAttachment ? (
-                          <AttachmentPreview
-                            attachment={replyAttachment}
-                            onRemove={() => clearReplyAttachment()}
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => replyFileInputRef.current?.click()}
-                            className="flex items-center gap-2 text-sm text-dark-400 transition-colors hover:text-dark-200"
-                          >
-                            <ImageIcon />
-                            {t('support.attachImage')}
-                          </button>
-                        )}
-                      </div>
-
-                      <Button
-                        type="submit"
-                        disabled={!replyMessage.trim() || replyAttachment?.uploading}
-                        loading={replyMutation.isPending}
-                      >
-                        <SendIcon />
-                      </Button>
-                    </div>
-                    {rateLimitError && (
-                      <div className="mt-2 rounded-lg border border-error-500/30 bg-error-500/10 p-2 text-sm text-error-400">
-                        {rateLimitError}
-                      </div>
-                    )}
-                  </div>
-                </form>
-              )}
-
-              {ticketDetail?.is_reply_blocked && (
-                <div className="border-t border-dark-800/50 py-4 text-center text-sm text-dark-500">
-                  {t('support.repliesDisabled')}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-16">
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-dark-800">
-                <svg
-                  className="h-8 w-8 text-dark-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"
-                  />
-                </svg>
-              </div>
-              <div className="text-dark-400">{t('support.selectTicket')}</div>
-            </div>
-          )}
-        </Card>
       </motion.div>
+
+      {/* Личка поддержки — запасной путь, после формы и списка обращений. Contact support card for "both" mode — self-animated: mounts after the
+          config query resolves, when the parent stagger orchestration has already
+          finished and would leave it stuck at opacity 0 */}
+      {supportConfig?.support_type === 'both' &&
+        supportConfig.support_username &&
+        resolveSupportContact(supportConfig) && (
+          <motion.div variants={staggerItem} initial="initial" animate="animate">
+            {/* Длинный ник поддержки уводил «Написать» за край карточки, а карточка
+                обрезает всё, что за краем: текст сжимается, кнопка — нет. */}
+            <Card className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-dark-800">
+                  <ChatIcon className="h-5 w-5 text-dark-400" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-dark-100">{t('support.contactUs')}</div>
+                  <div className="truncate text-xs text-dark-400">
+                    {supportConfig.support_username}
+                  </div>
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                className="shrink-0 whitespace-nowrap"
+                onClick={() => openSupportContact(supportConfig)}
+              >
+                {t('support.writeButton', 'Написать')}
+              </Button>
+            </Card>
+          </motion.div>
+        )}
     </motion.div>
   );
 }

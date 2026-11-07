@@ -1,109 +1,201 @@
-import { ThemeColors, DEFAULT_THEME_COLORS } from '../../types/theme';
+import { type ThemeColors, DEFAULT_THEME_COLORS } from '../../types/theme';
 
-// Menu item types
-export interface MenuItem {
+// Tree sidebar types
+export interface TreeSubItem {
   id: string;
+  categories: string[];
+}
+
+export interface TreeGroup {
+  id: string;
+  icon: string;
+  children: TreeSubItem[];
+}
+
+export interface SpecialItem {
+  id: string;
+  icon?: string;
   iconType?: 'star' | null;
-  categories?: string[];
 }
 
-export interface MenuSection {
-  id: string;
-  items: MenuItem[];
+export interface SettingsTreeConfig {
+  specialItems: SpecialItem[];
+  groups: TreeGroup[];
 }
 
-// Sidebar menu configuration
-export const MENU_SECTIONS: MenuSection[] = [
-  {
-    id: 'main',
-    items: [
-      { id: 'favorites', iconType: 'star' },
-      { id: 'branding', iconType: null },
-      { id: 'theme', iconType: null },
-      { id: 'analytics', iconType: null },
-      { id: 'buttons', iconType: null },
-    ],
-  },
-  {
-    id: 'settings',
-    items: [
-      {
-        id: 'payments',
-        iconType: null,
-        categories: [
-          'PAYMENT',
-          'PAYMENT_VERIFICATION',
-          'YOOKASSA',
-          'CRYPTOBOT',
-          'HELEKET',
-          'PLATEGA',
-          'TRIBUTE',
-          'MULENPAY',
-          'PAL24',
-          'WATA',
-          'TELEGRAM',
-        ],
-      },
-      {
-        id: 'subscriptions',
-        iconType: null,
-        categories: [
-          'SUBSCRIPTIONS_CORE',
-          'SIMPLE_SUBSCRIPTION',
-          'PERIODS',
-          'SUBSCRIPTION_PRICES',
-          'TRAFFIC',
-          'TRAFFIC_PACKAGES',
-          'TRIAL',
-          'AUTOPAY',
-        ],
-      },
-      {
-        id: 'interface',
-        iconType: null,
-        categories: [
-          'INTERFACE',
-          'INTERFACE_BRANDING',
-          'INTERFACE_SUBSCRIPTION',
-          'CONNECT_BUTTON',
-          'MINIAPP',
-          'HAPP',
-          'SKIP',
-          'ADDITIONAL',
-        ],
-      },
-      {
-        id: 'notifications',
-        iconType: null,
-        categories: ['NOTIFICATIONS', 'ADMIN_NOTIFICATIONS', 'ADMIN_REPORTS'],
-      },
-      { id: 'database', iconType: null, categories: ['DATABASE', 'POSTGRES', 'SQLITE', 'REDIS'] },
-      {
-        id: 'system',
-        iconType: null,
-        categories: [
-          'CORE',
-          'REMNAWAVE',
-          'SERVER_STATUS',
-          'MONITORING',
-          'MAINTENANCE',
-          'BACKUP',
-          'VERSION',
-          'WEB_API',
-          'WEBHOOK',
-          'LOG',
-          'DEBUG',
-          'EXTERNAL_ADMIN',
-        ],
-      },
-      {
-        id: 'users',
-        iconType: null,
-        categories: ['SUPPORT', 'LOCALIZATION', 'CHANNEL', 'TIMEZONE', 'REFERRAL', 'MODERATION'],
-      },
-    ],
-  },
-];
+// Маркер пункта-сборника: подставляется вместо списка категорий.
+export const OTHER_CATEGORIES = '*';
+
+/** Раздел настроек по id из ссылки `?section=`: подпункт дерева или особый пункт; иначе null. */
+export function findSettingsSection(id: string | null): string | null {
+  if (!id) return null;
+  if (SETTINGS_TREE.specialItems.some((item) => item.id === id)) return id;
+  const known = SETTINGS_TREE.groups.some((group) =>
+    group.children.some((child) => child.id === id),
+  );
+  return known ? id : null;
+}
+
+// Hierarchical settings tree — all 61 backend category keys mapped into 7 groups
+export const SETTINGS_TREE: SettingsTreeConfig = {
+  specialItems: [
+    { id: 'favorites', iconType: 'star' },
+    { id: 'branding', icon: '🎨' },
+    { id: 'theme', icon: '🌈' },
+    { id: 'analytics', icon: '📊' },
+    { id: 'buttons', icon: '📱' },
+  ],
+  groups: [
+    {
+      id: 'payments',
+      icon: '💳',
+      children: [
+        { id: 'payments_general', categories: ['PAYMENT', 'PAYMENT_VERIFICATION'] },
+        { id: 'payments_stars', categories: ['TELEGRAM'] },
+        { id: 'payments_yookassa', categories: ['YOOKASSA'] },
+        { id: 'payments_cryptobot', categories: ['CRYPTOBOT'] },
+        { id: 'payments_cloudpayments', categories: ['CLOUDPAYMENTS'] },
+        { id: 'payments_freekassa', categories: ['FREEKASSA'] },
+        { id: 'payments_kassa_ai', categories: ['KASSA_AI'] },
+        { id: 'payments_platega', categories: ['PLATEGA'] },
+        { id: 'payments_pal24', categories: ['PAL24'] },
+        { id: 'payments_heleket', categories: ['HELEKET'] },
+        { id: 'payments_mulenpay', categories: ['MULENPAY'] },
+        { id: 'payments_tribute', categories: ['TRIBUTE'] },
+        { id: 'payments_wata', categories: ['WATA'] },
+        { id: 'payments_riopay', categories: ['RIOPAY'] },
+        { id: 'payments_severpay', categories: ['SEVERPAY'] },
+        { id: 'payments_rollypay', categories: ['ROLLYPAY'] },
+        { id: 'payments_aurapay', categories: ['AURAPAY'] },
+        { id: 'payments_etoplatezhi', categories: ['ETOPLATEZHI'] },
+        { id: 'payments_antilopay', categories: ['ANTILOPAY'] },
+        { id: 'payments_jupiter', categories: ['JUPITER'] },
+        { id: 'payments_cispay', categories: ['CISPAY'] },
+        { id: 'payments_cashera', categories: ['CASHERA'] },
+        { id: 'payments_tabpay', categories: ['TABPAY'] },
+        { id: 'payments_anore', categories: ['ANORE'] },
+        { id: 'payments_paritypay', categories: ['PARITYPAY'] },
+        { id: 'payments_donut', categories: ['DONUT'] },
+        { id: 'payments_lava', categories: ['LAVA'] },
+        { id: 'payments_apple_iap', categories: ['APPLE_IAP'] },
+      ],
+    },
+    {
+      id: 'subscriptions',
+      icon: '📦',
+      children: [
+        { id: 'subs_core', categories: ['SUBSCRIPTIONS_CORE'] },
+        { id: 'subs_trial', categories: ['TRIAL'] },
+        { id: 'subs_pricing', categories: ['SUBSCRIPTION_PRICES'] },
+        { id: 'subs_periods', categories: ['PERIODS'] },
+        { id: 'subs_traffic', categories: ['TRAFFIC', 'TRAFFIC_PACKAGES'] },
+        { id: 'subs_simple', categories: ['SIMPLE_SUBSCRIPTION'] },
+        { id: 'subs_autopay', categories: ['AUTOPAY'] },
+      ],
+    },
+    {
+      id: 'interface',
+      icon: '🖥️',
+      children: [
+        {
+          id: 'iface_general',
+          categories: ['INTERFACE', 'INTERFACE_BRANDING', 'INTERFACE_SUBSCRIPTION'],
+        },
+        { id: 'iface_connect', categories: ['CONNECT_BUTTON'] },
+        { id: 'iface_miniapp', categories: ['MINIAPP'] },
+        { id: 'iface_happ', categories: ['HAPP'] },
+        { id: 'iface_widget', categories: ['TELEGRAM_WIDGET'] },
+        { id: 'iface_oidc', categories: ['TELEGRAM_OIDC'] },
+        { id: 'iface_skip', categories: ['SKIP'] },
+        { id: 'iface_info', categories: ['INFO_PAGES'] },
+        { id: 'iface_menu', categories: ['MENU'] },
+        { id: 'iface_additional', categories: ['ADDITIONAL'] },
+      ],
+    },
+    {
+      id: 'users',
+      icon: '👥',
+      children: [
+        { id: 'users_support', categories: ['SUPPORT'] },
+        { id: 'users_referral', categories: ['REFERRAL'] },
+        { id: 'users_channel', categories: ['CHANNEL'] },
+        { id: 'users_localization', categories: ['LOCALIZATION', 'TIMEZONE'] },
+        { id: 'users_moderation', categories: ['MODERATION', 'BAN_NOTIFICATIONS'] },
+        { id: 'users_access', categories: ['REGISTRATION_ACCESS', 'PASSKEY'] },
+      ],
+    },
+    {
+      id: 'notifications',
+      icon: '🔔',
+      children: [
+        { id: 'notif_user', categories: ['NOTIFICATIONS', 'WEBHOOK_NOTIFICATIONS'] },
+        { id: 'notif_admin', categories: ['ADMIN_NOTIFICATIONS'] },
+        { id: 'notif_reports', categories: ['ADMIN_REPORTS'] },
+      ],
+    },
+    {
+      id: 'database',
+      icon: '🗄️',
+      children: [
+        { id: 'db_general', categories: ['DATABASE'] },
+        { id: 'db_postgres', categories: ['POSTGRES'] },
+        { id: 'db_sqlite', categories: ['SQLITE'] },
+        { id: 'db_redis', categories: ['REDIS'] },
+      ],
+    },
+    {
+      id: 'system',
+      icon: '⚙️',
+      children: [
+        { id: 'sys_core', categories: ['CORE', 'DEBUG'] },
+        { id: 'sys_remnawave', categories: ['REMNAWAVE'] },
+        { id: 'sys_reachability', categories: ['BSCHEK'] },
+        { id: 'sys_dpichecker', categories: ['DPICHECKER'] },
+        { id: 'sys_webapi', categories: ['WEB_API', 'EXTERNAL_ADMIN'] },
+        { id: 'sys_cabinet', categories: ['CABINET'] },
+        { id: 'sys_webhook', categories: ['WEBHOOK'] },
+        { id: 'sys_server', categories: ['SERVER_STATUS'] },
+        { id: 'sys_monitoring', categories: ['MONITORING'] },
+        { id: 'sys_maintenance', categories: ['MAINTENANCE'] },
+        { id: 'sys_backup', categories: ['BACKUP'] },
+        { id: 'sys_version', categories: ['VERSION'] },
+        { id: 'sys_logging', categories: ['LOG'] },
+        // Категории на бэкенде выводятся из имени ключа, поэтому каждая новая
+        // настройка может создать категорию, которой в дереве нет — и тогда она
+        // просто исчезала из админки (так пропала вся категория CABINET).
+        // Этот пункт собирает всё неразложенное, как «Прочее» в админке бота.
+        { id: 'sys_other', categories: [OTHER_CATEGORIES] },
+      ],
+    },
+  ],
+};
+
+// Категории, у которых есть своё место в дереве (маркер сборника не считается).
+export function getMappedCategoryKeys(): Set<string> {
+  const mapped = new Set<string>();
+  for (const group of SETTINGS_TREE.groups) {
+    for (const child of group.children) {
+      for (const category of child.categories) {
+        if (category !== OTHER_CATEGORIES) mapped.add(category);
+      }
+    }
+  }
+  return mapped;
+}
+
+// Helper: find which group and sub-item a backend category key belongs to
+export function findTreeLocation(
+  categoryKey: string,
+): { groupId: string; subItemId: string } | null {
+  for (const group of SETTINGS_TREE.groups) {
+    for (const child of group.children) {
+      if (child.categories.includes(categoryKey)) {
+        return { groupId: group.id, subItemId: child.id };
+      }
+    }
+  }
+  return null;
+}
 
 // Theme preset type
 export interface ThemePreset {

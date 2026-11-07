@@ -7,7 +7,8 @@ export type PromoCodeType =
   | 'subscription_days'
   | 'trial_subscription'
   | 'promo_group'
-  | 'discount';
+  | 'discount'
+  | 'balance_and_days';
 
 export interface PromoCode {
   id: number;
@@ -16,6 +17,8 @@ export interface PromoCode {
   balance_bonus_kopeks: number;
   balance_bonus_rubles: number;
   subscription_days: number;
+  /** Гигабайты к подписке — третья составляющая набора бонусов. */
+  traffic_gb: number;
   max_uses: number;
   current_uses: number;
   uses_left: number;
@@ -25,6 +28,8 @@ export interface PromoCode {
   valid_from: string;
   valid_until: string | null;
   promo_group_id: number | null;
+  tariff_id: number | null;
+  tariff_name: string | null;
   created_by: number | null;
   created_at: string;
   updated_at: string;
@@ -57,12 +62,14 @@ export interface PromoCodeCreateRequest {
   type: PromoCodeType;
   balance_bonus_kopeks?: number;
   subscription_days?: number;
+  traffic_gb?: number;
   max_uses?: number;
   valid_from?: string;
   valid_until?: string | null;
   is_active?: boolean;
   first_purchase_only?: boolean;
   promo_group_id?: number | null;
+  tariff_id?: number | null;
 }
 
 export interface PromoCodeUpdateRequest {
@@ -70,12 +77,14 @@ export interface PromoCodeUpdateRequest {
   type?: PromoCodeType;
   balance_bonus_kopeks?: number;
   subscription_days?: number;
+  traffic_gb?: number;
   max_uses?: number;
   valid_from?: string;
   valid_until?: string | null;
   is_active?: boolean;
   first_purchase_only?: boolean;
   promo_group_id?: number | null;
+  tariff_id?: number | null;
 }
 
 // ============== PromoGroup Types ==============
@@ -124,6 +133,25 @@ export interface PromoGroupUpdateRequest {
   is_default?: boolean;
 }
 
+/** Итог последнего прохода пересчёта участников групп по тратам. */
+export interface PromoGroupRecalculationLast {
+  reason: string;
+  checked: number;
+  changed: number;
+  failed: number;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+}
+
+export interface PromoGroupRecalculationStatus {
+  running: boolean;
+  queued: boolean;
+  reason: string | null;
+  started: boolean;
+  last: PromoGroupRecalculationLast | null;
+}
+
 // ============== API ==============
 
 export const promocodesApi = {
@@ -133,7 +161,9 @@ export const promocodesApi = {
     offset?: number;
     is_active?: boolean;
   }): Promise<PromoCodeListResponse> => {
-    const response = await apiClient.get('/cabinet/admin/promocodes', { params });
+    const response = await apiClient.get('/cabinet/admin/promocodes', {
+      params,
+    });
     return response.data;
   },
 
@@ -161,7 +191,9 @@ export const promocodesApi = {
     limit?: number;
     offset?: number;
   }): Promise<PromoGroupListResponse> => {
-    const response = await apiClient.get('/cabinet/admin/promo-groups', { params });
+    const response = await apiClient.get('/cabinet/admin/promo-groups', {
+      params,
+    });
     return response.data;
   },
 
@@ -182,6 +214,17 @@ export const promocodesApi = {
 
   deletePromoGroup: async (id: number): Promise<void> => {
     await apiClient.delete(`/cabinet/admin/promo-groups/${id}`);
+  },
+
+  // Пересчёт участников групп по тратам — идёт у бота в фоне
+  recalculatePromoGroups: async (): Promise<PromoGroupRecalculationStatus> => {
+    const response = await apiClient.post('/cabinet/admin/promo-groups/recalculate');
+    return response.data;
+  },
+
+  getPromoGroupRecalculation: async (): Promise<PromoGroupRecalculationStatus> => {
+    const response = await apiClient.get('/cabinet/admin/promo-groups/recalculate');
+    return response.data;
   },
 
   // Deactivate user's active discount (admin)

@@ -3,23 +3,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { withdrawalApi } from '../api/withdrawals';
 import { AdminBackButton } from '../components/admin';
+import { WarningIcon } from '@/components/icons';
 import { useCurrency } from '../hooks/useCurrency';
+import { parseRiskAnalysis } from '../utils/withdrawalRisk';
+import { PageSkeleton, Skeleton } from '@/components/ui/skeleton';
 import {
   formatDate,
   getWithdrawalStatusBadge,
   getRiskColor,
   getRiskLevelColor,
 } from '../utils/withdrawalUtils';
-
-// Type for parsed risk analysis
-interface RiskAnalysis {
-  flags?: string[];
-  balance_stats?: Record<string, unknown>;
-  referral_deposits?: Record<string, unknown>;
-  suspicious_referrals?: Record<string, unknown>;
-  earnings_by_reason?: Record<string, unknown>;
-  [key: string]: unknown;
-}
 
 export default function AdminWithdrawalDetail() {
   const { t } = useTranslation();
@@ -59,9 +52,9 @@ export default function AdminWithdrawalDetail() {
   // Loading
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-      </div>
+      <PageSkeleton variant="admin" leading={1} titleWidth="w-56" className="space-y-6">
+        <Skeleton variant="card" count={2} className="h-40" />
+      </PageSkeleton>
     );
   }
 
@@ -91,9 +84,8 @@ export default function AdminWithdrawalDetail() {
   const badge = getWithdrawalStatusBadge(detail.status);
   const riskColor = getRiskColor(detail.risk_score);
 
-  // Parse risk analysis
-  const riskAnalysis = (detail.risk_analysis || {}) as RiskAnalysis;
-  const flags = riskAnalysis.flags || [];
+  // Разбор риска: бот кладёт разбивку в details — см. utils/withdrawalRisk.
+  const { flags, sections: riskSections } = parseRiskAnalysis(detail.risk_analysis);
 
   const riskLevelKey = detail.risk_level;
   const riskLevelBadge = getRiskLevelColor(riskLevelKey);
@@ -126,6 +118,14 @@ export default function AdminWithdrawalDetail() {
           <h3 className="mb-4 font-medium text-dark-200">
             {t('admin.withdrawals.detail.userInfo')}
           </h3>
+          <div className="mb-3 rounded-lg border border-accent-500/30 bg-accent-500/10 p-3">
+            <div className="mb-1 text-sm text-dark-400">
+              {t('admin.withdrawals.detail.requestedAmount')}
+            </div>
+            <div className="text-lg font-bold text-accent-400">
+              {formatWithCurrency(detail.amount_kopeks / 100, 0)}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div className="rounded-lg bg-dark-700/50 p-3">
               <div className="mb-1 text-sm text-dark-400">
@@ -182,7 +182,7 @@ export default function AdminWithdrawalDetail() {
             {t('admin.withdrawals.detail.paymentDetails')}
           </h3>
           <div className="rounded-lg bg-dark-700/50 p-3">
-            <p className="whitespace-pre-wrap break-all text-sm text-dark-300">
+            <p className="whitespace-pre-wrap break-words text-sm text-dark-300">
               {detail.payment_details || t('admin.withdrawals.detail.noPaymentDetails')}
             </p>
           </div>
@@ -229,19 +229,7 @@ export default function AdminWithdrawalDetail() {
                     key={index}
                     className="flex items-start gap-2 rounded-lg bg-error-500/10 px-3 py-2"
                   >
-                    <svg
-                      className="mt-0.5 h-4 w-4 shrink-0 text-error-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
-                      />
-                    </svg>
+                    <WarningIcon className="mt-0.5 h-4 w-4 shrink-0 text-error-400" />
                     <span className="text-sm text-error-300">{flag}</span>
                   </div>
                 ))}
@@ -250,63 +238,45 @@ export default function AdminWithdrawalDetail() {
           )}
 
           {/* Detailed Breakdown */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {riskAnalysis.balance_stats && (
-              <div className="rounded-lg bg-dark-700/50 p-3">
-                <div className="mb-2 text-sm font-medium text-dark-300">
-                  {t('admin.withdrawals.detail.balanceStats')}
-                </div>
-                {Object.entries(riskAnalysis.balance_stats).map(([key, value]) => (
-                  <div key={key} className="flex items-center justify-between text-xs">
-                    <span className="text-dark-500">{key}</span>
-                    <span className="text-dark-300">{String(value)}</span>
+          {riskSections.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {riskSections.map((section) => (
+                <div key={section.id} className="rounded-lg bg-dark-700/50 p-3">
+                  <div className="mb-2 text-sm font-medium text-dark-300">
+                    {t(section.titleKey)}
                   </div>
-                ))}
-              </div>
-            )}
-
-            {riskAnalysis.referral_deposits && (
-              <div className="rounded-lg bg-dark-700/50 p-3">
-                <div className="mb-2 text-sm font-medium text-dark-300">
-                  {t('admin.withdrawals.detail.referralDeposits')}
+                  <ul className="space-y-1.5">
+                    {section.rows.map((row, index) => (
+                      <li key={`${section.id}-${index}`} className="text-xs">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="min-w-0 text-dark-500 [overflow-wrap:anywhere]">
+                            {row.label.key
+                              ? t(row.label.key, { defaultValue: row.label.fallback })
+                              : row.label.fallback}
+                          </span>
+                          <span className="shrink-0 whitespace-nowrap text-dark-300">
+                            {row.kopeks !== undefined
+                              ? formatWithCurrency(row.kopeks / 100)
+                              : row.count !== undefined
+                                ? row.count
+                                : null}
+                            {row.times !== undefined && (
+                              <span className="ml-1 text-dark-500">
+                                {t('admin.withdrawals.detail.risk.times', { count: row.times })}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        {row.note && (
+                          <div className="mt-0.5 text-[11px] text-warning-400">{row.note}</div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                {Object.entries(riskAnalysis.referral_deposits).map(([key, value]) => (
-                  <div key={key} className="flex items-center justify-between text-xs">
-                    <span className="text-dark-500">{key}</span>
-                    <span className="text-dark-300">{String(value)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {riskAnalysis.suspicious_referrals && (
-              <div className="rounded-lg bg-dark-700/50 p-3">
-                <div className="mb-2 text-sm font-medium text-dark-300">
-                  {t('admin.withdrawals.detail.suspiciousReferrals')}
-                </div>
-                {Object.entries(riskAnalysis.suspicious_referrals).map(([key, value]) => (
-                  <div key={key} className="flex items-center justify-between text-xs">
-                    <span className="text-dark-500">{key}</span>
-                    <span className="text-dark-300">{String(value)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {riskAnalysis.earnings_by_reason && (
-              <div className="rounded-lg bg-dark-700/50 p-3">
-                <div className="mb-2 text-sm font-medium text-dark-300">
-                  {t('admin.withdrawals.detail.earningsByReason')}
-                </div>
-                {Object.entries(riskAnalysis.earnings_by_reason).map(([key, value]) => (
-                  <div key={key} className="flex items-center justify-between text-xs">
-                    <span className="text-dark-500">{key}</span>
-                    <span className="text-dark-300">{String(value)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Admin Comment Section */}
@@ -367,7 +337,7 @@ export default function AdminWithdrawalDetail() {
             <button
               onClick={() => completeMutation.mutate()}
               disabled={completeMutation.isPending}
-              className="w-full rounded-lg bg-accent-500 px-4 py-3 font-medium text-white transition-colors hover:bg-accent-600 disabled:opacity-50"
+              className="w-full rounded-lg bg-accent-500 px-4 py-3 font-medium text-on-accent transition-colors hover:bg-accent-600 disabled:opacity-50"
             >
               {completeMutation.isPending
                 ? t('admin.withdrawals.detail.completing')

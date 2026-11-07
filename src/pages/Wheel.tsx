@@ -1,3 +1,4 @@
+import { uiLocale } from '@/utils/uiLocale';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -10,85 +11,70 @@ import { Card } from '@/components/data-display/Card/Card';
 import { Button } from '@/components/primitives/Button/Button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { staggerContainer, staggerItem } from '@/components/motion/transitions';
+import { PiCaretDown } from 'react-icons/pi';
+import { StarIcon, CalendarIcon, HistoryIcon, CloseIcon } from '@/components/icons';
+import { cn } from '@/lib/utils';
+import { PageSkeleton, Skeleton } from '@/components/ui/skeleton';
 
 // Icons
-const StarIcon = () => (
-  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-  </svg>
-);
-
-const CalendarIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"
-    />
-  </svg>
-);
-
-const HistoryIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
-    />
-  </svg>
-);
-
-const CloseIcon = () => (
-  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
-
 const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
-  <svg
-    className={`h-5 w-5 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-  </svg>
+  <PiCaretDown
+    className={cn('h-5 w-5 transition-transform duration-200', expanded && 'rotate-180')}
+  />
 );
 
 /**
- * Calculate rotation degrees for a prize based on its position on the wheel.
+ * Rotation (mod 360) that brings sector `prizeIndex` under the top pointer.
  * Mirrors the backend _calculate_rotation logic in wheel_service.py.
  */
-function calculateRotationForPrize(prizes: WheelPrize[], result: SpinResult): number {
-  // Find prize index by matching display_name + emoji (both must match for safety)
-  let prizeIndex = prizes.findIndex(
-    (p) => p.display_name === result.prize_display_name && p.emoji === result.emoji,
-  );
-
-  // Fallback: match by display_name only
-  if (prizeIndex === -1) {
-    prizeIndex = prizes.findIndex((p) => p.display_name === result.prize_display_name);
-  }
-
-  // Fallback: match by emoji + prize_type
-  if (prizeIndex === -1) {
-    prizeIndex = prizes.findIndex(
-      (p) => p.emoji === result.emoji && p.prize_type === result.prize_type,
-    );
-  }
-
-  if (prizeIndex === -1) {
-    // Can't determine prize position — random angle
-    return Math.random() * 360;
-  }
-
+function rotationForIndex(prizes: WheelPrize[], prizeIndex: number): number {
+  if (prizes.length === 0) return 0;
   const sectorAngle = 360 / prizes.length;
   const baseAngle = prizeIndex * sectorAngle + sectorAngle / 2;
-  const offset = (Math.random() - 0.5) * sectorAngle * 0.6; // ±30% of sector
-  const stopAngle = 360 - baseAngle + offset;
+  const offset = (Math.random() - 0.5) * sectorAngle * 0.6; // ±30% within the sector
+  return 360 - baseAngle + offset;
+}
 
-  return stopAngle;
+/** Index of the "Nothing" sector, or 0 if there isn't one. */
+function neutralIndex(prizes: WheelPrize[]): number {
+  const idx = prizes.findIndex((p) => p.prize_type === 'nothing');
+  return idx === -1 ? 0 : idx;
+}
+
+/**
+ * Rotation that lands the wheel on the ACTUAL won prize's sector.
+ *
+ * Matches by prize_id (exact). It must NEVER land on a random sector: a random
+ * angle was the root cause of "the wheel shows месяц/50₽ but the result is
+ * Ничего" on the browser Stars path — when the prize couldn't be located the old
+ * code span to Math.random()*360, which often pointed at a winning slot. When the
+ * prize can't be resolved we land on the neutral ("Nothing") sector instead, so
+ * the animation never falsely celebrates a win.
+ */
+function calculateRotationForPrize(prizes: WheelPrize[], result: SpinResult): number {
+  let prizeIndex = result.prize_id != null ? prizes.findIndex((p) => p.id === result.prize_id) : -1;
+
+  // Defensive fallbacks for older payloads without prize_id: name+emoji, then name.
+  if (prizeIndex === -1 && result.prize_display_name) {
+    prizeIndex = prizes.findIndex(
+      (p) => p.display_name === result.prize_display_name && p.emoji === result.emoji,
+    );
+    if (prizeIndex === -1) {
+      prizeIndex = prizes.findIndex((p) => p.display_name === result.prize_display_name);
+    }
+  }
+
+  if (prizeIndex === -1) prizeIndex = neutralIndex(prizes); // unknown → neutral, never random
+
+  return rotationForIndex(prizes, prizeIndex);
+}
+
+/**
+ * Rotation used when the real result is unknown (e.g. the Stars-payment poll timed
+ * out). Lands on the neutral ("Nothing") sector — never a random/winning angle.
+ */
+function neutralRotation(prizes: WheelPrize[]): number {
+  return rotationForIndex(prizes, neutralIndex(prizes));
 }
 
 export default function Wheel() {
@@ -107,6 +93,7 @@ export default function Wheel() {
   const [isPayingStars, setIsPayingStars] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [showStarsConfirm, setShowStarsConfirm] = useState(false);
+  const [selectedSubscriptionId, setSelectedSubscriptionId] = useState<number | null>(null);
   const paymentTypeInitialized = useRef(false);
 
   const {
@@ -135,6 +122,11 @@ export default function Wheel() {
       setPaymentType('telegram_stars');
     } else if (daysEnabled) {
       setPaymentType('subscription_days');
+    }
+
+    // Auto-select subscription if only one eligible
+    if (config.eligible_subscriptions?.length === 1) {
+      setSelectedSubscriptionId(config.eligible_subscriptions[0].id);
     }
   }, [config]);
 
@@ -173,7 +165,10 @@ export default function Wheel() {
               // Found a new spin! Return it as SpinResult
               return {
                 success: true,
-                prize_id: latestSpin.id,
+                // WheelPrize id — lets the wheel land on the exact won sector.
+                // (Was latestSpin.id, the SPIN id, which never matched a sector and
+                // forced the random-angle fallback → the fake-win bug.)
+                prize_id: latestSpin.prize_id,
                 prize_type: latestSpin.prize_type,
                 prize_value: latestSpin.prize_value,
                 prize_display_name: latestSpin.prize_display_name,
@@ -248,13 +243,11 @@ export default function Wheel() {
 
               if (result) {
                 pendingStarsResultRef.current = result;
-                // Calculate rotation so the wheel lands on the correct prize sector
-                const rotation = config?.prizes
-                  ? calculateRotationForPrize(config.prizes, result)
-                  : Math.random() * 360;
-                setTargetRotation(rotation);
+                // Land on the ACTUAL won sector (matched by prize_id).
+                setTargetRotation(calculateRotationForPrize(config?.prizes ?? [], result));
               } else {
-                // Fallback: couldn't get result — use random rotation
+                // Couldn't get the result — land on the neutral sector (never a
+                // random/winning angle) and tell the user to check their history.
                 pendingStarsResultRef.current = {
                   success: true,
                   prize_id: null,
@@ -268,7 +261,7 @@ export default function Wheel() {
                   promocode: null,
                   error: null,
                 };
-                setTargetRotation(Math.random() * 360);
+                setTargetRotation(neutralRotation(config?.prizes ?? []));
               }
 
               setIsSpinning(true);
@@ -278,7 +271,8 @@ export default function Wheel() {
 
               setIsPayingStars(false);
 
-              // Error polling — spin with random rotation and show generic message
+              // Error polling — land on the neutral sector (never a random/winning
+              // angle) and show the generic "check your history" message.
               pendingStarsResultRef.current = {
                 success: true,
                 prize_id: null,
@@ -292,7 +286,7 @@ export default function Wheel() {
                 promocode: null,
                 error: null,
               };
-              setTargetRotation(Math.random() * 360);
+              setTargetRotation(neutralRotation(config?.prizes ?? []));
               setIsSpinning(true);
             });
         } else if (status !== 'cancelled') {
@@ -362,13 +356,17 @@ export default function Wheel() {
     setIsPayingStars(true);
     // In browser: pre-open window synchronously (direct user gesture) to avoid popup blocker
     if (!capabilities.hasInvoice) {
+      // Web-only: synchronously pre-open a tab during the user gesture to dodge the
+      // popup blocker before the async invoice URL resolves. Not reached in Telegram
+      // (hasInvoice is true there, so the native invoice flow is used instead).
+      // biome-ignore lint: canonical popup-blocker workaround, see comment above
       preOpenedWindowRef.current = window.open('about:blank', '_blank') || null;
     }
     starsInvoiceMutation.mutate();
   };
 
   const spinMutation = useMutation({
-    mutationFn: () => wheelApi.spin(paymentType),
+    mutationFn: () => wheelApi.spin(paymentType, selectedSubscriptionId ?? undefined),
     onSuccess: (result) => {
       if (result.success) {
         setTargetRotation(result.rotation_degrees);
@@ -403,6 +401,7 @@ export default function Wheel() {
   };
 
   const handleUnifiedSpin = () => {
+    if (noSubscription) return;
     if (paymentType === 'telegram_stars') {
       if (!config?.spin_cost_stars_enabled || !config?.spin_cost_stars) {
         notify.warning(t('wheel.starsNotAvailable'));
@@ -424,7 +423,6 @@ export default function Wheel() {
       // Use the pending result from polling, or show a fallback
       if (pendingStarsResultRef.current) {
         setSpinResult(pendingStarsResultRef.current);
-        // Haptic feedback based on result
         if (pendingStarsResultRef.current.prize_type === 'nothing') {
           haptic.notification('warning');
         } else {
@@ -468,16 +466,17 @@ export default function Wheel() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-      </div>
+      <PageSkeleton titleWidth="w-40" className="space-y-6 pb-8">
+        <Skeleton className="h-4 w-56" />
+        <Skeleton variant="card" className="h-80" />
+      </PageSkeleton>
     );
   }
 
   if (error || !config) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
-        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-red-500/10">
+        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-error-500/10">
           <span className="text-4xl">😔</span>
         </div>
         <p className="text-lg text-dark-400">{t('wheel.errors.loadFailed')}</p>
@@ -505,10 +504,19 @@ export default function Wheel() {
 
   // Stars via Telegram invoice don't require ruble balance, so only check daily limit
   const dailyLimitReached = config.daily_limit > 0 && config.user_spins_today >= config.daily_limit;
+  const noSubscription = !config.has_subscription;
+  const needsSubscriptionPick =
+    paymentType === 'subscription_days' &&
+    config.eligible_subscriptions &&
+    config.eligible_subscriptions.length > 1 &&
+    !selectedSubscriptionId;
+
   const spinDisabled =
     isSpinning ||
     isPayingStars ||
     dailyLimitReached ||
+    noSubscription ||
+    needsSubscriptionPick ||
     (paymentType === 'telegram_stars' ? !starsEnabled : !config.can_spin);
 
   return (
@@ -528,7 +536,10 @@ export default function Wheel() {
 
       {/* Wheel Section */}
       <Card>
-        <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr,280px]">
+        {/* grid-cols-1 = minmax(0,1fr): колонка не растёт по длинному названию
+            приза (колесо уезжало вправо и обрезалось наполовину). Внутренний
+            отступ — только с sm: у карточки свой, на телефоне двойной сжимал колесо. */}
+        <div className="grid grid-cols-1 gap-6 sm:p-2 lg:grid-cols-[minmax(0,1fr),280px] lg:p-4">
           {/* Left: Wheel and Controls */}
           <div>
             {/* Wheel */}
@@ -543,7 +554,8 @@ export default function Wheel() {
             <div className="mt-8 space-y-4">
               {/* Payment type selector */}
               {(starsEnabled || daysEnabled) && (
-                <div className="rounded-xl border border-dark-700/30 bg-dark-800/30 p-1">
+                <div className="rounded-xl border border-dark-700/30 bg-dark-800/30 px-1 pb-1 pt-2">
+                  <p className="mb-1 text-center text-xs text-dark-400">{t('wheel.spinCost')}</p>
                   <div
                     className={`grid gap-1 ${bothMethodsAvailable ? 'grid-cols-2' : 'grid-cols-1'}`}
                   >
@@ -579,6 +591,38 @@ export default function Wheel() {
                 </div>
               )}
 
+              {/* Subscription selector for days payment in multi-tariff */}
+              {paymentType === 'subscription_days' &&
+                config.eligible_subscriptions &&
+                config.eligible_subscriptions.length > 1 && (
+                  <div className="rounded-xl border border-dark-700/30 bg-dark-800/30 p-3">
+                    <p className="mb-2 text-center text-xs text-dark-400">
+                      {t('wheel.selectSubscription', 'Выберите подписку')}
+                    </p>
+                    <div className="space-y-1.5">
+                      {config.eligible_subscriptions.map((sub) => (
+                        <button
+                          key={sub.id}
+                          onClick={() => setSelectedSubscriptionId(sub.id)}
+                          disabled={isSpinning}
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-all ${
+                            selectedSubscriptionId === sub.id
+                              ? 'bg-accent-500/15 text-accent-400'
+                              : 'text-dark-400 hover:text-dark-200'
+                          }`}
+                        >
+                          <span className="min-w-0 truncate font-medium">
+                            {sub.tariff_name || t('subscription.defaultName', 'Подписка')}
+                          </span>
+                          <span className="shrink-0 text-xs opacity-60">
+                            {sub.days_left} {t('common.units.days', 'дней')}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
               {/* Stars confirmation panel */}
               {showStarsConfirm && !isSpinning && !isPayingStars ? (
                 <div className="space-y-3 rounded-xl border border-accent-500/30 bg-accent-500/5 p-4">
@@ -594,7 +638,7 @@ export default function Wheel() {
                     </button>
                     <button
                       onClick={handleDirectStarsPay}
-                      className="rounded-lg bg-accent-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-600"
+                      className="rounded-lg bg-accent-500 px-4 py-2.5 text-sm font-medium text-on-accent transition-colors hover:bg-accent-600"
                     >
                       {t('wheel.payStars', { count: config.spin_cost_stars ?? 0 })}
                     </button>
@@ -614,20 +658,40 @@ export default function Wheel() {
                 </Button>
               )}
 
-              {/* Cannot spin hint — only show for days payment (Stars via invoice always works) */}
-              {!isSpinning && paymentType !== 'telegram_stars' && !config.can_spin && (
-                <div className="rounded-linear border border-dark-700/30 bg-dark-800/30 p-4 text-center">
-                  <p className="text-dark-400">
-                    {config.can_spin_reason === 'daily_limit_reached'
-                      ? t('wheel.errors.dailyLimitReached')
-                      : t('wheel.errors.cannotSpin')}
-                  </p>
+              {/* No subscription hint */}
+              {!isSpinning && noSubscription && (
+                <div className="rounded-linear border border-warning-500/30 bg-warning-500/5 p-4 text-center">
+                  <p className="text-warning-400">{t('wheel.errors.noSubscription')}</p>
                 </div>
               )}
+              {/* Cannot spin hint — only show for days payment (Stars via invoice always works) */}
+              {!isSpinning &&
+                !noSubscription &&
+                paymentType !== 'telegram_stars' &&
+                !config.can_spin && (
+                  <div className="rounded-linear border border-dark-700/30 bg-dark-800/30 p-4 text-center">
+                    <p className="text-dark-400">
+                      {config.can_spin_reason === 'daily_limit_reached'
+                        ? t('wheel.errors.dailyLimitReached')
+                        : t('wheel.errors.cannotSpin')}
+                    </p>
+                  </div>
+                )}
               {/* Daily limit hint for Stars payment (not covered by can_spin check) */}
-              {!isSpinning && paymentType === 'telegram_stars' && dailyLimitReached && (
-                <div className="rounded-linear border border-dark-700/30 bg-dark-800/30 p-4 text-center">
-                  <p className="text-dark-400">{t('wheel.errors.dailyLimitReached')}</p>
+              {!isSpinning &&
+                !noSubscription &&
+                paymentType === 'telegram_stars' &&
+                dailyLimitReached && (
+                  <div className="rounded-linear border border-dark-700/30 bg-dark-800/30 p-4 text-center">
+                    <p className="text-dark-400">{t('wheel.errors.dailyLimitReached')}</p>
+                  </div>
+                )}
+              {/* Subscription selection required hint */}
+              {!isSpinning && needsSubscriptionPick && (
+                <div className="rounded-linear border border-warning-500/30 bg-warning-500/5 p-4 text-center">
+                  <p className="text-warning-400">
+                    {t('wheel.errors.selectSubscription', 'Выберите подписку для списания дней')}
+                  </p>
                 </div>
               )}
 
@@ -637,7 +701,7 @@ export default function Wheel() {
                   className={`animate-fade-in rounded-linear border p-4 ${
                     spinResult.success
                       ? 'border-accent-500/30 bg-accent-500/10'
-                      : 'border-red-500/30 bg-red-500/10'
+                      : 'border-error-500/30 bg-error-500/10'
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -660,7 +724,7 @@ export default function Wheel() {
                       onClick={closeResultModal}
                       className="shrink-0 rounded-lg p-2 text-dark-400 transition-colors hover:bg-white/5 hover:text-dark-200"
                     >
-                      <CloseIcon />
+                      <CloseIcon className="h-6 w-6" />
                     </button>
                   </div>
 
@@ -716,20 +780,23 @@ export default function Wheel() {
             >
               <div className="border-t border-dark-700/30 px-4 pb-4 pt-2">
                 {history && history.items.length > 0 ? (
+                  // "hidden"/"show" don't exist in staggerContainer/staggerItem
+                  // (their keys are initial/animate/exit), so the stagger here
+                  // was silently a no-op
                   <motion.div
                     variants={staggerContainer}
-                    initial="hidden"
-                    animate="show"
+                    initial="initial"
+                    animate="animate"
                     className="space-y-2"
                   >
                     {history.items.map((item: SpinHistoryItem) => (
                       <motion.div
                         key={item.id}
                         variants={staggerItem}
-                        className="flex items-center justify-between rounded-linear border border-dark-700/30 bg-dark-800/30 p-3"
+                        className="flex items-center justify-between gap-3 rounded-linear border border-dark-700/30 bg-dark-800/30 p-3"
                       >
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-linear bg-dark-700/50 text-xl">
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-linear bg-dark-700/50 text-xl">
                             {item.emoji}
                           </div>
                           <div className="min-w-0">
@@ -737,11 +804,11 @@ export default function Wheel() {
                               {item.prize_display_name}
                             </div>
                             <div className="text-xs text-dark-500">
-                              {new Date(item.created_at).toLocaleDateString()}
+                              {new Date(item.created_at).toLocaleDateString(uiLocale())}
                             </div>
                           </div>
                         </div>
-                        <div className="whitespace-nowrap text-sm text-dark-400">
+                        <div className="shrink-0 whitespace-nowrap text-sm text-dark-400">
                           -
                           {item.payment_type === 'telegram_stars'
                             ? `${item.payment_amount} ⭐`

@@ -28,9 +28,7 @@ function clearCode(): void {
   try {
     localStorage.removeItem(REFERRAL_KEY);
     localStorage.removeItem(REFERRAL_TTL_KEY);
-  } catch {
-    // localStorage unavailable
-  }
+  } catch {}
 }
 
 /**
@@ -52,9 +50,7 @@ export function captureReferralFromUrl(): void {
     const newUrl =
       window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
     window.history.replaceState(null, '', newUrl);
-  } catch {
-    // localStorage or history API unavailable
-  }
+  } catch {}
 }
 
 /**

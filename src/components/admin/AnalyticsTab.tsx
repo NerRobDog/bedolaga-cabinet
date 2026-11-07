@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { brandingApi } from '../../api/branding';
-import { CheckIcon, CloseIcon } from './icons';
+import { getApiErrorMessage } from '../../utils/api-error';
+import { CheckIcon, CloseIcon, PencilIcon } from './icons';
+import { GlobeIcon, TranslateIcon, TrendUpIcon } from '@/components/icons';
 
 export function AnalyticsTab() {
   const { t } = useTranslation();
@@ -31,8 +33,7 @@ export function AnalyticsTab() {
       setError(null);
     },
     onError: (err: unknown) => {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(detail || t('common.error'));
+      setError(getApiErrorMessage(err, t('common.error')));
     },
   });
 
@@ -73,10 +74,8 @@ export function AnalyticsTab() {
       <div className="rounded-2xl border border-dark-700/50 bg-dark-800/50 p-6">
         <div className="mb-1 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-500/20 to-red-500/20">
-              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-              </svg>
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-warning-500/20 to-error-500/20">
+              <GlobeIcon className="h-5 w-5 text-warning-400" />
             </div>
             <h3 className="text-lg font-semibold text-dark-100">
               {t('admin.settings.yandexMetrika')}
@@ -108,13 +107,13 @@ export function AnalyticsTab() {
                 value={yandexValue}
                 onChange={(e) => setYandexValue(e.target.value.replace(/\D/g, ''))}
                 placeholder={t('admin.settings.yandexIdPlaceholder')}
-                className="flex-1 rounded-xl border border-dark-600 bg-dark-700 px-4 py-2.5 text-dark-100 placeholder-dark-500 transition-colors focus:border-accent-500 focus:outline-none"
+                className="min-w-0 flex-1 rounded-xl border border-dark-600 bg-dark-700 px-4 py-2.5 text-dark-100 placeholder-dark-500 transition-colors focus:border-accent-500 focus:outline-none"
                 autoFocus
               />
               <button
                 onClick={handleSaveYandex}
                 disabled={updateMutation.isPending}
-                className="rounded-xl bg-accent-500 px-4 py-2.5 text-white transition-colors hover:bg-accent-600 disabled:opacity-50"
+                className="rounded-xl bg-accent-500 px-4 py-2.5 text-on-accent transition-colors hover:bg-accent-600 disabled:opacity-50"
               >
                 <CheckIcon />
               </button>
@@ -143,34 +142,77 @@ export function AnalyticsTab() {
                 }}
                 className="rounded-lg p-1.5 text-dark-400 transition-colors hover:bg-dark-700 hover:text-dark-200"
               >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
-                  />
-                </svg>
+                <PencilIcon className="h-4 w-4" />
               </button>
             </div>
           )}
           <p className="text-xs text-dark-500">{t('admin.settings.yandexIdHint')}</p>
         </div>
+        {/* Offline Conversions (inside Yandex block) */}
+        {analytics?.offline_conv_enabled && (
+          <>
+            <div className="my-5 border-t border-dark-700/30" />
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendUpIcon className="h-4 w-4 text-warning-400" />
+                <span className="text-sm font-medium text-dark-200">
+                  {t('admin.settings.offlineConv', 'Offline Conversions')}
+                </span>
+              </div>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-success-500/15 px-2 py-0.5 text-xs font-medium text-success-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-success-400" />
+                {t('admin.settings.counterActive')}
+              </span>
+            </div>
+            {analytics.offline_conv_counter_id && (
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-sm text-dark-400">{t('admin.settings.counterId')}:</span>
+                <span className="font-mono text-sm text-dark-200">
+                  {analytics.offline_conv_counter_id}
+                </span>
+              </div>
+            )}
+            {analytics.offline_conv_measurement_secret_masked && (
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-sm text-dark-400">
+                  {t('admin.settings.apiKey', 'API Key')}:
+                </span>
+                <code className="rounded-md bg-dark-700/50 px-2 py-0.5 font-mono text-sm text-dark-300">
+                  {analytics.offline_conv_measurement_secret_masked}
+                </code>
+              </div>
+            )}
+            {analytics.offline_conv_goals && analytics.offline_conv_goals.length > 0 && (
+              <div className="grid gap-2">
+                {analytics.offline_conv_goals.map((goal) => (
+                  <div
+                    key={goal.event_id}
+                    className="flex items-center justify-between rounded-xl border border-dark-700/30 bg-dark-900/40 px-4 py-2.5"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="inline-flex h-2 w-2 rounded-full bg-success-400" />
+                      <span className="text-sm text-dark-200">{goal.name}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <code className="rounded-md bg-dark-700/50 px-2 py-0.5 text-xs text-dark-400">
+                        {goal.event_id}
+                      </code>
+                      <span className="text-xs text-dark-500">{goal.dedup}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Google Ads */}
       <div className="rounded-2xl border border-dark-700/50 bg-dark-800/50 p-6">
         <div className="mb-1 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/20 to-green-500/20">
-              <svg className="h-5 w-5 text-blue-400" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z" />
-              </svg>
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent-500/20 to-success-500/20">
+              <TranslateIcon className="h-5 w-5 text-accent-400" />
             </div>
             <h3 className="text-lg font-semibold text-dark-100">{t('admin.settings.googleAds')}</h3>
           </div>
@@ -200,13 +242,13 @@ export function AnalyticsTab() {
                   value={googleIdValue}
                   onChange={(e) => setGoogleIdValue(e.target.value)}
                   placeholder={t('admin.settings.googleIdPlaceholder')}
-                  className="flex-1 rounded-xl border border-dark-600 bg-dark-700 px-4 py-2.5 text-dark-100 placeholder-dark-500 transition-colors focus:border-accent-500 focus:outline-none"
+                  className="min-w-0 flex-1 rounded-xl border border-dark-600 bg-dark-700 px-4 py-2.5 text-dark-100 placeholder-dark-500 transition-colors focus:border-accent-500 focus:outline-none"
                   autoFocus
                 />
                 <button
                   onClick={handleSaveGoogleId}
                   disabled={updateMutation.isPending}
-                  className="rounded-xl bg-accent-500 px-4 py-2.5 text-white transition-colors hover:bg-accent-600 disabled:opacity-50"
+                  className="rounded-xl bg-accent-500 px-4 py-2.5 text-on-accent transition-colors hover:bg-accent-600 disabled:opacity-50"
                 >
                   <CheckIcon />
                 </button>
@@ -221,9 +263,9 @@ export function AnalyticsTab() {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <span
-                  className={`text-base ${analytics?.google_ads_id ? 'font-mono text-dark-100' : 'text-dark-500'}`}
+                  className={`min-w-0 truncate text-base ${analytics?.google_ads_id ? 'font-mono text-dark-100' : 'text-dark-500'}`}
                 >
                   {analytics?.google_ads_id || t('admin.settings.notConfigured')}
                 </span>
@@ -233,21 +275,9 @@ export function AnalyticsTab() {
                     setEditingGoogleId(true);
                     setError(null);
                   }}
-                  className="rounded-lg p-1.5 text-dark-400 transition-colors hover:bg-dark-700 hover:text-dark-200"
+                  className="shrink-0 rounded-lg p-1.5 text-dark-400 transition-colors hover:bg-dark-700 hover:text-dark-200"
                 >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
-                    />
-                  </svg>
+                  <PencilIcon className="h-4 w-4" />
                 </button>
               </div>
             )}
@@ -266,13 +296,13 @@ export function AnalyticsTab() {
                   value={googleLabelValue}
                   onChange={(e) => setGoogleLabelValue(e.target.value)}
                   placeholder={t('admin.settings.googleLabelPlaceholder')}
-                  className="flex-1 rounded-xl border border-dark-600 bg-dark-700 px-4 py-2.5 text-dark-100 placeholder-dark-500 transition-colors focus:border-accent-500 focus:outline-none"
+                  className="min-w-0 flex-1 rounded-xl border border-dark-600 bg-dark-700 px-4 py-2.5 text-dark-100 placeholder-dark-500 transition-colors focus:border-accent-500 focus:outline-none"
                   autoFocus
                 />
                 <button
                   onClick={handleSaveGoogleLabel}
                   disabled={updateMutation.isPending}
-                  className="rounded-xl bg-accent-500 px-4 py-2.5 text-white transition-colors hover:bg-accent-600 disabled:opacity-50"
+                  className="rounded-xl bg-accent-500 px-4 py-2.5 text-on-accent transition-colors hover:bg-accent-600 disabled:opacity-50"
                 >
                   <CheckIcon />
                 </button>
@@ -287,9 +317,9 @@ export function AnalyticsTab() {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <span
-                  className={`text-base ${analytics?.google_ads_label ? 'font-mono text-dark-100' : 'text-dark-500'}`}
+                  className={`min-w-0 truncate text-base ${analytics?.google_ads_label ? 'font-mono text-dark-100' : 'text-dark-500'}`}
                 >
                   {analytics?.google_ads_label || t('admin.settings.notConfigured')}
                 </span>
@@ -299,21 +329,9 @@ export function AnalyticsTab() {
                     setEditingGoogleLabel(true);
                     setError(null);
                   }}
-                  className="rounded-lg p-1.5 text-dark-400 transition-colors hover:bg-dark-700 hover:text-dark-200"
+                  className="shrink-0 rounded-lg p-1.5 text-dark-400 transition-colors hover:bg-dark-700 hover:text-dark-200"
                 >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
-                    />
-                  </svg>
+                  <PencilIcon className="h-4 w-4" />
                 </button>
               </div>
             )}

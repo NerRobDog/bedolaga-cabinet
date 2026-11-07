@@ -88,9 +88,15 @@ export default function AdminApplicationReview() {
           <div className="space-y-3">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <div className="mb-1 flex items-center gap-2">
-                  <span className="font-medium text-dark-100">{displayName}</span>
-                  {app.username && <span className="text-sm text-dark-500">@{app.username}</span>}
+                <div className="mb-1 flex min-w-0 flex-wrap items-baseline gap-x-2">
+                  <span className="min-w-0 font-medium text-dark-100 [overflow-wrap:anywhere]">
+                    {displayName}
+                  </span>
+                  {app.username && (
+                    <span className="min-w-0 text-sm text-dark-500 [overflow-wrap:anywhere]">
+                      @{app.username}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -134,6 +140,14 @@ export default function AdminApplicationReview() {
                     {t('admin.partners.applicationFields.expectedReferrals')}:
                   </span>{' '}
                   <span className="text-dark-200">{app.expected_monthly_referrals}</span>
+                </div>
+              )}
+              {app.desired_commission_percent != null && (
+                <div className="rounded-lg bg-dark-700/50 p-3">
+                  <span className="text-dark-500">
+                    {t('admin.partners.applicationFields.desiredCommission')}:
+                  </span>{' '}
+                  <span className="text-dark-200">{app.desired_commission_percent}%</span>
                 </div>
               )}
             </div>

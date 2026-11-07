@@ -1,55 +1,215 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { adminPaymentMethodsApi } from '../api/adminPaymentMethods';
+import { adminOverpayCertificateApi, OVERPAY_CERT_MAX_SIZE } from '../api/adminOverpayCertificate';
+import { METHOD_LABELS } from '../constants/paymentMethods';
 import type { PromoGroupSimple } from '../types';
 import { usePlatform } from '../platform/hooks/usePlatform';
+import { useHapticFeedback } from '../platform/hooks/useHaptic';
+import { useDestructiveConfirm } from '../platform/hooks/useNativeDialog';
 import { createNumberInputHandler, toNumber } from '../utils/inputHelpers';
-const BackIcon = () => (
-  <svg
-    className="h-5 w-5 text-dark-400"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-  </svg>
-);
+import { localeMap } from '../utils/withdrawalUtils';
+import { PermissionGate } from '@/components/auth/PermissionGate';
+import { BackIcon, CheckIcon, SaveIcon } from '@/components/icons';
+import { PageSkeleton, Skeleton, SkeletonGroup } from '@/components/ui/skeleton';
 
-const METHOD_LABELS: Record<string, string> = {
-  telegram_stars: 'Telegram Stars',
-  tribute: 'Tribute',
-  cryptobot: 'CryptoBot',
-  heleket: 'Heleket',
-  yookassa: 'YooKassa',
-  mulenpay: 'MulenPay',
-  pal24: 'PayPalych',
-  platega: 'Platega',
-  wata: 'WATA',
-  freekassa: 'Freekassa',
-  freekassa_sbp: 'Freekassa СБП',
-  freekassa_card: 'Freekassa Карта',
-  cloudpayments: 'CloudPayments',
-  kassa_ai: 'Kassa AI',
-};
+function extractErrorDetail(err: unknown): string | null {
+  const error = err as { response?: { data?: { detail?: unknown } } };
+  const detail = error.response?.data?.detail;
+  return typeof detail === 'string' ? detail : null;
+}
 
-const CheckIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-  </svg>
-);
+function OverpayCertificateSection() {
+  const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
+  const haptic = useHapticFeedback();
+  const confirm = useDestructiveConfirm();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [passphrase, setPassphrase] = useState('');
+  const [certError, setCertError] = useState<string | null>(null);
+  const [certWarning, setCertWarning] = useState<string | null>(null);
 
-const SaveIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
-    />
-  </svg>
-);
+  const { data: certStatus, isLoading } = useQuery({
+    queryKey: ['admin', 'overpay-certificate'],
+    queryFn: adminOverpayCertificateApi.getStatus,
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: (payload: { file: File; passphrase: string }) =>
+      adminOverpayCertificateApi.upload(payload.file, payload.passphrase),
+    onSuccess: (resp) => {
+      haptic.success();
+      setCertError(null);
+      setCertWarning(resp.warning ?? null);
+      setCertFile(null);
+      setPassphrase('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      queryClient.invalidateQueries({ queryKey: ['admin', 'overpay-certificate'] });
+    },
+    onError: (err) => {
+      haptic.error();
+      setCertWarning(null);
+      setCertError(extractErrorDetail(err) ?? t('admin.paymentMethods.overpayCertUploadError'));
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: adminOverpayCertificateApi.remove,
+    onSuccess: () => {
+      haptic.success();
+      setCertError(null);
+      setCertWarning(null);
+      queryClient.invalidateQueries({ queryKey: ['admin', 'overpay-certificate'] });
+    },
+    onError: (err) => {
+      haptic.error();
+      setCertError(extractErrorDetail(err) ?? t('admin.paymentMethods.overpayCertDeleteError'));
+    },
+  });
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setCertError(null);
+    setCertWarning(null);
+    const selected = e.target.files?.[0] ?? null;
+    if (selected && selected.size > OVERPAY_CERT_MAX_SIZE) {
+      setCertFile(null);
+      e.target.value = '';
+      setCertError(t('admin.paymentMethods.overpayCertFileTooLarge'));
+      return;
+    }
+    setCertFile(selected);
+  };
+
+  const handleDelete = async () => {
+    const confirmed = await confirm(t('admin.paymentMethods.overpayCertConfirmDelete'));
+    if (confirmed) deleteMutation.mutate();
+  };
+
+  const expiryDate = certStatus?.not_valid_after
+    ? new Date(certStatus.not_valid_after).toLocaleDateString(localeMap[i18n.language] || 'ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })
+    : null;
+
+  const isExpired = certStatus?.not_valid_after
+    ? new Date(certStatus.not_valid_after).getTime() < Date.now()
+    : false;
+
+  return (
+    <div className="card space-y-4">
+      <h3 className="text-sm font-semibold text-dark-200">
+        {t('admin.paymentMethods.overpayCertTitle')}
+      </h3>
+
+      {isLoading ? (
+        <SkeletonGroup>
+          <Skeleton className="h-10 w-full rounded-xl" />
+        </SkeletonGroup>
+      ) : certStatus ? (
+        <div>
+          {certStatus.valid ? (
+            <>
+              {isExpired ? (
+                <p className="text-sm text-warning-400">
+                  {t('admin.paymentMethods.overpayCertExpired', { date: expiryDate })}
+                </p>
+              ) : (
+                <p className="text-sm text-success-400">
+                  {t('admin.paymentMethods.overpayCertValid', { date: expiryDate })}
+                </p>
+              )}
+              {certStatus.subject && (
+                <p className="mt-1 break-all text-xs text-dark-500">{certStatus.subject}</p>
+              )}
+            </>
+          ) : certStatus.uploaded ? (
+            <p className="text-sm text-warning-400">
+              {t('admin.paymentMethods.overpayCertUnreadable')}
+            </p>
+          ) : (
+            <p className="text-sm text-dark-400">{t('admin.paymentMethods.overpayCertMissing')}</p>
+          )}
+          {certStatus.env_locked_path && (
+            <p className="mt-1 text-xs text-dark-500">
+              {t('admin.paymentMethods.overpayCertEnvLockedPath')}
+            </p>
+          )}
+          {certStatus.env_locked_passphrase && (
+            <p className="mt-1 text-xs text-dark-500">
+              {t('admin.paymentMethods.overpayCertEnvLockedPassphrase')}
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      <div>
+        <label className="mb-2 block text-sm font-medium text-dark-300">
+          {t('admin.paymentMethods.overpayCertFile')}
+        </label>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".p12,.pfx"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-dark-600 bg-dark-800/50 p-4 text-sm text-dark-400 transition-colors hover:border-dark-500 hover:text-dark-300"
+        >
+          {certFile ? certFile.name : t('admin.paymentMethods.overpayCertChooseFile')}
+        </button>
+      </div>
+
+      <div>
+        <label className="mb-2 block text-sm font-medium text-dark-300">
+          {t('admin.paymentMethods.overpayCertPassphrase')}
+        </label>
+        <input
+          type="password"
+          autoComplete="off"
+          value={passphrase}
+          onChange={(e) => setPassphrase(e.target.value)}
+          placeholder={t('admin.paymentMethods.overpayCertPassphrasePlaceholder')}
+          className="input"
+        />
+      </div>
+
+      {certError && <p className="text-sm text-error-400">{certError}</p>}
+      {certWarning && <p className="text-sm text-warning-400">{certWarning}</p>}
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={() => certFile && uploadMutation.mutate({ file: certFile, passphrase })}
+          disabled={!certFile || uploadMutation.isPending}
+          className="btn-primary flex flex-1 items-center justify-center gap-2"
+        >
+          {uploadMutation.isPending && (
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+          )}
+          {t('admin.paymentMethods.overpayCertUpload')}
+        </button>
+        {certStatus?.uploaded && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleteMutation.isPending}
+            className="btn-danger"
+          >
+            {t('admin.paymentMethods.overpayCertDelete')}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function AdminPaymentMethodEdit() {
   const { t } = useTranslation();
@@ -75,6 +235,7 @@ export default function AdminPaymentMethodEdit() {
   // Local state for editing
   const [isEnabled, setIsEnabled] = useState(false);
   const [customName, setCustomName] = useState('');
+  const [customDesc, setCustomDesc] = useState('');
   const [subOptions, setSubOptions] = useState<Record<string, boolean>>({});
   const [minAmount, setMinAmount] = useState<number | ''>('');
   const [maxAmount, setMaxAmount] = useState<number | ''>('');
@@ -82,12 +243,17 @@ export default function AdminPaymentMethodEdit() {
   const [firstTopupFilter, setFirstTopupFilter] = useState<'any' | 'yes' | 'no'>('any');
   const [promoGroupFilterMode, setPromoGroupFilterMode] = useState<'all' | 'selected'>('all');
   const [selectedPromoGroupIds, setSelectedPromoGroupIds] = useState<number[]>([]);
+  const [openUrlDirect, setOpenUrlDirect] = useState(false);
+  const [quickAmounts, setQuickAmounts] = useState<number[]>([]);
+  const [quickAmountInput, setQuickAmountInput] = useState('');
+  const [quickAmountsError, setQuickAmountsError] = useState<string | null>(null);
 
   // Initialize state when config loads
   useEffect(() => {
     if (config) {
       setIsEnabled(config.is_enabled);
       setCustomName(config.display_name || '');
+      setCustomDesc(config.description || '');
       setSubOptions(config.sub_options || {});
       setMinAmount(config.min_amount_kopeks ?? '');
       setMaxAmount(config.max_amount_kopeks ?? '');
@@ -95,6 +261,9 @@ export default function AdminPaymentMethodEdit() {
       setFirstTopupFilter(config.first_topup_filter);
       setPromoGroupFilterMode(config.promo_group_filter_mode);
       setSelectedPromoGroupIds(config.allowed_promo_group_ids);
+      // ?? false — защита от stale-config (backend ещё не пришёл с миграцией)
+      setOpenUrlDirect(config.open_url_direct ?? false);
+      setQuickAmounts((config.quick_amounts ?? []).map((kopeks) => kopeks / 100));
     }
   }, [config]);
 
@@ -116,6 +285,7 @@ export default function AdminPaymentMethodEdit() {
       first_topup_filter: firstTopupFilter,
       promo_group_filter_mode: promoGroupFilterMode,
       allowed_promo_group_ids: promoGroupFilterMode === 'selected' ? selectedPromoGroupIds : [],
+      open_url_direct: openUrlDirect,
     };
 
     // Display name
@@ -123,6 +293,13 @@ export default function AdminPaymentMethodEdit() {
       data.display_name = customName.trim();
     } else {
       data.reset_display_name = true;
+    }
+
+    // Description
+    if (customDesc.trim()) {
+      data.description = customDesc.trim();
+    } else {
+      data.reset_description = true;
     }
 
     // Sub-options
@@ -142,6 +319,14 @@ export default function AdminPaymentMethodEdit() {
       data.reset_max_amount = true;
     }
 
+    if (quickAmounts.length > 0) {
+      data.quick_amounts = [...quickAmounts]
+        .sort((a, b) => a - b)
+        .map((rubles) => Math.round(rubles * 100));
+    } else {
+      data.reset_quick_amounts = true;
+    }
+
     updateMethodMutation.mutate(data);
   };
 
@@ -151,11 +336,35 @@ export default function AdminPaymentMethodEdit() {
     );
   };
 
+  const addQuickAmount = () => {
+    setQuickAmountsError(null);
+    const parsed = parseFloat(quickAmountInput.replace(',', '.'));
+    const value = Math.round(parsed);
+    if (isNaN(value) || value <= 0) {
+      setQuickAmountsError(t('admin.paymentMethods.quickAmountsInvalid'));
+      return;
+    }
+    if (quickAmounts.includes(value)) {
+      setQuickAmountInput('');
+      return;
+    }
+    if (quickAmounts.length >= 10) {
+      setQuickAmountsError(t('admin.paymentMethods.quickAmountsLimit'));
+      return;
+    }
+    setQuickAmounts((prev) => [...prev, value].sort((a, b) => a - b));
+    setQuickAmountInput('');
+  };
+
+  const removeQuickAmount = (value: number) => {
+    setQuickAmounts((prev) => prev.filter((amount) => amount !== value));
+  };
+
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-      </div>
+      <PageSkeleton variant="admin" leading={1} titleWidth="w-56" className="space-y-6">
+        <Skeleton variant="card" className="h-96" />
+      </PageSkeleton>
     );
   }
 
@@ -167,7 +376,7 @@ export default function AdminPaymentMethodEdit() {
           {!capabilities.hasBackButton && (
             <button
               onClick={() => navigate('/admin/payment-methods')}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
             >
               <BackIcon />
             </button>
@@ -190,13 +399,15 @@ export default function AdminPaymentMethodEdit() {
         {!capabilities.hasBackButton && (
           <button
             onClick={() => navigate('/admin/payment-methods')}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
           >
             <BackIcon />
           </button>
         )}
-        <div>
-          <h1 className="text-2xl font-bold text-dark-50">{displayName}</h1>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-dark-50 [overflow-wrap:anywhere]">
+            {displayName}
+          </h1>
           <p className="text-sm text-dark-500">
             {METHOD_LABELS[config.method_id] || config.method_id}
           </p>
@@ -219,6 +430,9 @@ export default function AdminPaymentMethodEdit() {
           </div>
           <button
             onClick={() => setIsEnabled(!isEnabled)}
+            role="switch"
+            aria-checked={isEnabled}
+            aria-label={t('admin.paymentMethods.methodEnabled')}
             className={`relative h-6 w-11 rounded-full transition-colors ${
               isEnabled ? 'bg-accent-500' : 'bg-dark-600'
             }`}
@@ -226,6 +440,36 @@ export default function AdminPaymentMethodEdit() {
             <span
               className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${
                 isEnabled ? 'left-6' : 'left-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Open URL directly toggle */}
+        <div className="flex items-center justify-between border-t border-dark-800 pt-6">
+          <div className="pr-4">
+            <div className="text-sm font-medium text-dark-200">
+              {t('admin.paymentMethods.openUrlDirect', 'Открывать страницу оплаты сразу')}
+            </div>
+            <div className="mt-0.5 text-xs text-dark-500">
+              {t(
+                'admin.paymentMethods.openUrlDirectHint',
+                'Без панели со ссылкой — провайдер открывается внутри MiniApp/вкладки сразу после клика. После оплаты юзер возвращается на /balance/result.',
+              )}
+            </div>
+          </div>
+          <button
+            onClick={() => setOpenUrlDirect(!openUrlDirect)}
+            role="switch"
+            aria-checked={openUrlDirect}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+              openUrlDirect ? 'bg-accent-500' : 'bg-dark-600'
+            }`}
+            aria-label={t('admin.paymentMethods.openUrlDirect', 'Open payment page directly')}
+          >
+            <span
+              className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${
+                openUrlDirect ? 'left-6' : 'left-1'
               }`}
             />
           </button>
@@ -246,6 +490,20 @@ export default function AdminPaymentMethodEdit() {
           <p className="mt-1 text-xs text-dark-500">
             {t('admin.paymentMethods.displayNameHint')}: {config.default_display_name}
           </p>
+        </div>
+
+        {/* Description */}
+        <div>
+          <label className="mb-2 block text-sm font-medium text-dark-300">
+            {t('admin.paymentMethods.description')}
+          </label>
+          <textarea
+            value={customDesc}
+            onChange={(e) => setCustomDesc(e.target.value)}
+            rows={2}
+            className="input"
+          />
+          <p className="mt-1 text-xs text-dark-500">{t('admin.paymentMethods.descriptionHint')}</p>
         </div>
 
         {/* Sub-options */}
@@ -269,8 +527,10 @@ export default function AdminPaymentMethodEdit() {
                   >
                     <span className="text-sm">{opt.name}</span>
                     <div
-                      className={`flex h-5 w-5 items-center justify-center rounded ${
-                        enabled ? 'bg-accent-500 text-white' : 'border border-dark-600 bg-dark-700'
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded ${
+                        enabled
+                          ? 'bg-accent-500 text-on-accent'
+                          : 'border border-dark-600 bg-dark-700'
                       }`}
                     >
                       {enabled && <CheckIcon />}
@@ -308,6 +568,58 @@ export default function AdminPaymentMethodEdit() {
               className="input"
             />
           </div>
+        </div>
+
+        <div>
+          <label className="mb-2 block text-sm font-medium text-dark-300">
+            {t('admin.paymentMethods.quickAmounts')}
+          </label>
+          {quickAmounts.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {quickAmounts.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => removeQuickAmount(value)}
+                  aria-label={t('admin.paymentMethods.quickAmountsRemove', { value })}
+                  className="flex items-center gap-1.5 rounded-xl border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-accent-300 transition-colors hover:border-error-500/40 hover:bg-error-500/10 hover:text-error-400"
+                >
+                  <span>
+                    {value}
+                    {'\u00A0'}₽
+                  </span>
+                  <span className="text-base leading-none">×</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min="1"
+              value={quickAmountInput}
+              onChange={(e) => setQuickAmountInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addQuickAmount();
+                }
+              }}
+              placeholder={t('admin.paymentMethods.quickAmountsPlaceholder')}
+              className="input min-w-0 flex-1"
+            />
+            <button type="button" onClick={addQuickAmount} className="btn-secondary shrink-0">
+              {t('admin.paymentMethods.quickAmountsAdd')}
+            </button>
+          </div>
+          {quickAmountsError && <p className="mt-1 text-xs text-error-400">{quickAmountsError}</p>}
+          <p className="mt-1 text-xs text-dark-500">
+            {t('admin.paymentMethods.quickAmountsHint', {
+              defaults: (config.default_quick_amounts ?? [])
+                .map((kopeks) => kopeks / 100)
+                .join(', '),
+            })}
+          </p>
         </div>
 
         {/* Display conditions */}
@@ -413,7 +725,7 @@ export default function AdminPaymentMethodEdit() {
                         <span>{group.name}</span>
                         <div
                           className={`flex h-4 w-4 items-center justify-center rounded ${
-                            selected ? 'bg-accent-500 text-white' : 'border border-dark-600'
+                            selected ? 'bg-accent-500 text-on-accent' : 'border border-dark-600'
                           }`}
                         >
                           {selected && <CheckIcon />}
@@ -428,6 +740,12 @@ export default function AdminPaymentMethodEdit() {
         </div>
       </div>
 
+      {config.method_id === 'overpay' && (
+        <PermissionGate permission="settings:read">
+          <OverpayCertificateSection />
+        </PermissionGate>
+      )}
+
       {/* Actions */}
       <div className="flex items-center gap-3">
         <button onClick={() => navigate('/admin/payment-methods')} className="btn-secondary flex-1">
@@ -441,7 +759,7 @@ export default function AdminPaymentMethodEdit() {
           {updateMethodMutation.isPending ? (
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
           ) : (
-            <SaveIcon />
+            <SaveIcon className="h-4 w-4" />
           )}
           {t('admin.paymentMethods.saveButton')}
         </button>

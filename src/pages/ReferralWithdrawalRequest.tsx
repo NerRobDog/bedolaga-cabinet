@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, type SyntheticEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -12,7 +12,7 @@ export default function ReferralWithdrawalRequest() {
   const { formatWithCurrency, currencySymbol } = useCurrency();
 
   const [form, setForm] = useState({
-    amount_kopeks: 0,
+    amount_rubles: 0,
     payment_details: '',
   });
 
@@ -37,12 +37,12 @@ export default function ReferralWithdrawalRequest() {
     },
   });
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = (e: SyntheticEvent) => {
     e.preventDefault();
     if (form.payment_details.length < 5) return;
-    if (form.amount_kopeks <= 0) return;
+    if (form.amount_rubles <= 0) return;
     withdrawMutation.mutate({
-      amount_kopeks: form.amount_kopeks,
+      amount_kopeks: Math.round(form.amount_rubles * 100),
       payment_details: form.payment_details,
     });
   };
@@ -59,33 +59,42 @@ export default function ReferralWithdrawalRequest() {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bento-card space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-dark-300">
+            <label htmlFor="rw-amount" className="mb-1 block text-sm font-medium text-dark-300">
               {t('referral.withdrawal.fields.amount')}
             </label>
             <input
+              id="rw-amount"
               type="number"
-              min={balance?.min_amount_kopeks ?? 0}
-              max={balance?.available_total ?? 0}
-              step={100}
+              min={balance ? Math.ceil(balance.min_amount_kopeks / 100) : 0}
+              max={balance ? Math.floor(balance.available_total / 100) : 0}
               className="input w-full"
-              value={form.amount_kopeks || ''}
+              value={form.amount_rubles || ''}
               onChange={(e) =>
                 setForm({
                   ...form,
-                  amount_kopeks: e.target.value ? Number(e.target.value) : 0,
+                  amount_rubles: e.target.value ? Number(e.target.value) : 0,
                 })
               }
-              placeholder={t('referral.withdrawal.fields.amountPlaceholder')}
+              placeholder={t('referral.withdrawal.fields.amountPlaceholder', {
+                currency: currencySymbol,
+              })}
             />
             <p className="mt-1 text-xs text-dark-500">
-              {t('referral.withdrawal.fields.amountHint', { currency: currencySymbol })}
+              {t('referral.withdrawal.fields.amountHint', {
+                min: balance ? Math.ceil(balance.min_amount_kopeks / 100) : 0,
+                currency: currencySymbol,
+              })}
             </p>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-dark-300">
+            <label
+              htmlFor="rw-payment-details"
+              className="mb-1 block text-sm font-medium text-dark-300"
+            >
               {balance?.requisites_text || t('referral.withdrawal.fields.paymentDetails')}
             </label>
             <textarea
+              id="rw-payment-details"
               className="input min-h-[80px] w-full"
               value={form.payment_details}
               onChange={(e) => setForm({ ...form, payment_details: e.target.value })}
@@ -115,12 +124,12 @@ export default function ReferralWithdrawalRequest() {
             disabled={
               withdrawMutation.isPending ||
               form.payment_details.length < 5 ||
-              form.amount_kopeks <= 0
+              form.amount_rubles <= 0
             }
             className={`btn-primary flex-1 px-5 ${
               withdrawMutation.isPending ||
               form.payment_details.length < 5 ||
-              form.amount_kopeks <= 0
+              form.amount_rubles <= 0
                 ? 'opacity-50'
                 : ''
             }`}

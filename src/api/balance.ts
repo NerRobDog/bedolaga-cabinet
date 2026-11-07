@@ -1,4 +1,5 @@
 ﻿import apiClient from './client';
+import i18n from '../i18n';
 import type {
   Balance,
   Transaction,
@@ -6,6 +7,7 @@ import type {
   PaginatedResponse,
   PendingPayment,
   ManualCheckResponse,
+  SavedCardsResponse,
 } from '../types';
 
 export const balanceApi = {
@@ -48,11 +50,14 @@ export const balanceApi = {
     amount_rubles: number;
     status: string;
     expires_at: string | null;
+    /** Свой экран оплаты (Cashera H2H): строка QR СБП или платёжная ссылка. */
+    qr_payload?: string | null;
   }> => {
     const payload: {
       amount_kopeks: number;
       payment_method: string;
       payment_option?: string;
+      language?: string;
     } = {
       amount_kopeks: amountKopeks,
       payment_method: paymentMethod,
@@ -60,6 +65,7 @@ export const balanceApi = {
     if (paymentOption) {
       payload.payment_option = paymentOption;
     }
+    payload.language = i18n.language || 'ru';
     const response = await apiClient.post('/cabinet/balance/topup', payload);
     return response.data;
   },
@@ -67,14 +73,21 @@ export const balanceApi = {
   // Activate promo code
   activatePromocode: async (
     code: string,
+    subscriptionId?: number,
   ): Promise<{
     success: boolean;
-    message: string;
-    balance_before: number;
-    balance_after: number;
-    bonus_description: string | null;
+    message?: string;
+    balance_before?: number;
+    balance_after?: number;
+    bonus_description?: string | null;
+    error?: string;
+    eligible_subscriptions?: Array<{ id: number; tariff_name: string; days_left: number }>;
+    code?: string;
   }> => {
-    const response = await apiClient.post('/cabinet/promocode/activate', { code });
+    const response = await apiClient.post('/cabinet/promocode/activate', {
+      code,
+      ...(subscriptionId ? { subscription_id: subscriptionId } : {}),
+    });
     return response.data;
   },
 
@@ -109,7 +122,15 @@ export const balanceApi = {
   // Get specific pending payment details
   getPendingPayment: async (method: string, paymentId: number): Promise<PendingPayment> => {
     const response = await apiClient.get<PendingPayment>(
-      `/cabinet/balance/pending-payments/${method}/${paymentId}`,
+      `/cabinet/balance/pending-payments/${encodeURIComponent(method)}/${encodeURIComponent(paymentId)}`,
+    );
+    return response.data;
+  },
+
+  // Get latest pending payment by method (fallback when sessionStorage unavailable)
+  getLatestPayment: async (method: string): Promise<PendingPayment> => {
+    const response = await apiClient.get<PendingPayment>(
+      `/cabinet/balance/pending-payments/${encodeURIComponent(method)}/latest`,
     );
     return response.data;
   },
@@ -117,8 +138,19 @@ export const balanceApi = {
   // Manually check payment status
   checkPaymentStatus: async (method: string, paymentId: number): Promise<ManualCheckResponse> => {
     const response = await apiClient.post<ManualCheckResponse>(
-      `/cabinet/balance/pending-payments/${method}/${paymentId}/check`,
+      `/cabinet/balance/pending-payments/${encodeURIComponent(method)}/${encodeURIComponent(paymentId)}/check`,
     );
     return response.data;
+  },
+
+  // Get saved payment methods (cards) for recurrent payments
+  getSavedCards: async (): Promise<SavedCardsResponse> => {
+    const response = await apiClient.get<SavedCardsResponse>('/cabinet/balance/saved-cards');
+    return response.data;
+  },
+
+  // Unlink (delete) a saved payment method
+  deleteSavedCard: async (id: number): Promise<void> => {
+    await apiClient.delete(`/cabinet/balance/saved-cards/${id}`);
   },
 };

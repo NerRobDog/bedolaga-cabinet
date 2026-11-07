@@ -1,7 +1,5 @@
 import apiClient from './client';
 
-// === Types ===
-
 export interface AdminRole {
   id: number;
   name: string;
@@ -47,6 +45,16 @@ export interface UserRoleAssignment {
   user_email: string | null;
   user_first_name: string | null;
   user_telegram_id: number | null;
+}
+
+export interface AdminWithRoles {
+  user_id: number;
+  telegram_id: number | null;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  role_names: string[];
 }
 
 export interface AssignRolePayload {
@@ -134,8 +142,6 @@ export interface PermissionSection {
   actions: string[];
 }
 
-// === API ===
-
 const BASE = '/cabinet/admin/rbac';
 
 export const rbacApi = {
@@ -164,6 +170,13 @@ export const rbacApi = {
 
   getPermissionRegistry: async (): Promise<PermissionSection[]> => {
     const response = await apiClient.get<PermissionSection[]>(`${BASE}/permissions`);
+    return response.data;
+  },
+
+  // --- RBAC Users ---
+
+  getRbacUsers: async (): Promise<AdminWithRoles[]> => {
+    const response = await apiClient.get<AdminWithRoles[]>(`${BASE}/users`);
     return response.data;
   },
 

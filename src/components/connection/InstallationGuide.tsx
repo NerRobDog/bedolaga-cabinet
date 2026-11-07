@@ -10,7 +10,9 @@ import type {
 } from '@/types';
 import { useTheme } from '@/hooks/useTheme';
 import { CardsBlock, TimelineBlock, AccordionBlock, MinimalBlock, BlockButtons } from './blocks';
-import type { BlockRendererProps } from './blocks';
+import type { BlockRendererProps, RenderBlock } from './blocks';
+import TvQuickConnect from './TvQuickConnect';
+import { BackIcon, BookOpenIcon, ChevronIcon, QrCodeIcon } from '@/components/icons';
 
 const platformOrder = ['ios', 'android', 'windows', 'macos', 'linux', 'androidTV', 'appleTV'];
 
@@ -32,17 +34,21 @@ const RENDERERS: Record<string, React.ComponentType<BlockRendererProps>> = {
   minimal: MinimalBlock,
 };
 
-const BackIcon = () => (
-  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-  </svg>
-);
+/** TV quick-connect is a Happ-only feature (check.happ.su/sendtv) — show it only
+ *  for the Happ app, detected by its happ:// deep-link scheme (name as fallback). */
+function isHappApp(app: RemnawaveAppClient | null): boolean {
+  if (!app) return false;
+  if ((app.deepLink ?? '').toLowerCase().startsWith('happ://')) return true;
+  return app.name.toLowerCase().includes('happ');
+}
 
 interface Props {
   appConfig: AppConfig;
   onOpenDeepLink: (url: string) => void;
   isTelegramWebApp: boolean;
   onGoBack: () => void;
+  onOpenQR?: () => void;
+  username?: string;
 }
 
 export default function InstallationGuide({
@@ -50,6 +56,8 @@ export default function InstallationGuide({
   onOpenDeepLink,
   isTelegramWebApp,
   onGoBack,
+  onOpenQR,
+  username,
 }: Props) {
   const { t, i18n } = useTranslation();
   const { isLight } = useTheme();
@@ -59,8 +67,6 @@ export default function InstallationGuide({
 
   const [activePlatformKey, setActivePlatformKey] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<RemnawaveAppClient | null>(null);
-
-  // --- Helpers ---
 
   const getLocalizedText = useCallback(
     (text: LocalizedText | undefined): string => {
@@ -94,8 +100,6 @@ export default function InstallationGuide({
     [appConfig.svgLibrary],
   );
 
-  // --- Available platforms ---
-
   const availablePlatforms = useMemo(() => {
     if (!appConfig.platforms) return [];
     const available = platformOrder.filter((key) => {
@@ -107,8 +111,6 @@ export default function InstallationGuide({
     }
     return available;
   }, [appConfig.platforms, detectedPlatform]);
-
-  // --- Auto-select platform & app ---
 
   useEffect(() => {
     if (selectedApp || !availablePlatforms.length) return;
@@ -122,8 +124,6 @@ export default function InstallationGuide({
     }
   }, [appConfig.platforms, availablePlatforms, selectedApp]);
 
-  // --- Button renderer (delegates to BlockButtons component) ---
-
   const renderBlockButtons = useCallback(
     (buttons: RemnawaveButtonClient[] | undefined, variant: 'light' | 'subtle') => (
       <BlockButtons
@@ -133,6 +133,7 @@ export default function InstallationGuide({
         subscriptionUrl={appConfig.subscriptionUrl}
         hideLink={appConfig.hideLink}
         deepLink={selectedApp?.deepLink}
+        username={username}
         getLocalizedText={getLocalizedText}
         getBaseTranslation={getBaseTranslation}
         getSvgHtml={getSvgHtml}
@@ -143,6 +144,7 @@ export default function InstallationGuide({
       appConfig.subscriptionUrl,
       appConfig.hideLink,
       selectedApp?.deepLink,
+      username,
       isLight,
       getLocalizedText,
       getBaseTranslation,
@@ -151,7 +153,12 @@ export default function InstallationGuide({
     ],
   );
 
-  // --- Current platform data ---
+  const userIsOnTv = detectedPlatform === 'androidTV' || detectedPlatform === 'appleTV';
+  // Happ's TV quick-connect (check.happ.su/sendtv) is ONE API serving BOTH
+  // Android TV and Apple TV — show the widget on either.
+  const selectedPlatform = activePlatformKey || availablePlatforms[0];
+  const isTvLayout =
+    (selectedPlatform === 'androidTV' || selectedPlatform === 'appleTV') && !userIsOnTv;
 
   const currentPlatformKey = activePlatformKey || availablePlatforms[0];
   const currentPlatformData = currentPlatformKey
@@ -191,23 +198,50 @@ export default function InstallationGuide({
   const blockType = appConfig.uiConfig?.installationGuidesBlockType || 'cards';
   const Renderer = RENDERERS[blockType] || CardsBlock;
 
+  // For the Happ TV app (Android TV / Apple TV), inject the TV connect widget as
+  // customNode so it renders THROUGH the active block style (cards/timeline/
+  // accordion/minimal) instead of as separate clashing cards that break it.
+  const showTvConnect = Boolean(
+    selectedApp && isTvLayout && isHappApp(selectedApp) && appConfig.subscriptionUrl,
+  );
+  let renderBlocks: RenderBlock[] = selectedApp?.blocks ?? [];
+  if (selectedApp && showTvConnect && appConfig.subscriptionUrl) {
+    // install → add-subscription → connect: attach to the add step (index 1);
+    // fall back to the last block for shorter configs.
+    const idx = selectedApp.blocks.length >= 3 ? 1 : Math.max(0, selectedApp.blocks.length - 1);
+    const widget = <TvQuickConnect subscriptionUrl={appConfig.subscriptionUrl} isLight={isLight} />;
+    renderBlocks = selectedApp.blocks.map((b, i) => (i === idx ? { ...b, customNode: widget } : b));
+  }
+
   return (
     <div className="space-y-6 pb-6">
-      {/* Header + platform dropdown */}
-      <div className="flex items-center gap-3">
+      {/* Header + platform dropdown. На телефоне список платформ — своей строкой
+          во всю ширину: в одном ряду длинное название платформы распирало
+          страницу вбок, а кнопки «назад» и QR сжимались с 40 до 22 px. */}
+      <div className="flex flex-wrap items-center gap-3">
         {!isTelegramWebApp && (
           <button
             onClick={onGoBack}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
+            aria-label={t('common.back', 'Back')}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
           >
-            <BackIcon />
+            <BackIcon className="h-6 w-6" />
           </button>
         )}
-        <h2 className="flex-1 text-lg font-bold text-dark-100">
+        <h2 className="min-w-0 flex-1 text-lg font-bold text-dark-100">
           {getBaseTranslation('installationGuideHeader', 'subscription.connection.title')}
         </h2>
+        {appConfig.subscriptionUrl && onOpenQR && (
+          <button
+            onClick={() => onOpenQR()}
+            aria-label={t('subscription.connection.openQr', 'Open QR code')}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 text-dark-200 transition-colors hover:border-dark-600"
+          >
+            <QrCodeIcon className="h-5 w-5" />
+          </button>
+        )}
         {availablePlatforms.length > 1 && (
-          <div className="relative flex items-center">
+          <div className="relative flex w-full items-center sm:w-auto sm:max-w-[45%]">
             {currentPlatformSvg && (
               <div
                 className="pointer-events-none absolute left-3 z-10 h-5 w-5 text-dark-400 [&>svg]:h-full [&>svg]:w-full"
@@ -221,11 +255,16 @@ export default function InstallationGuide({
                 setActivePlatformKey(newPlatform);
                 const data = appConfig.platforms[newPlatform] as RemnawavePlatformData | undefined;
                 if (data?.apps?.length) {
-                  const app = data.apps.find((a) => a.featured) || data.apps[0];
+                  // Keep the user's current app (by name) if it also exists on the
+                  // new platform; only fall back to featured/first otherwise.
+                  const app =
+                    data.apps.find((a) => a.name === selectedApp?.name) ||
+                    data.apps.find((a) => a.featured) ||
+                    data.apps[0];
                   if (app) setSelectedApp(app);
                 }
               }}
-              className={`appearance-none rounded-xl border py-2 pr-8 text-sm font-medium outline-none transition-colors ${
+              className={`w-full min-w-0 appearance-none truncate rounded-xl border py-2 pr-8 text-sm font-medium outline-none transition-colors ${
                 isLight
                   ? 'border-dark-700/60 bg-white/80 text-dark-200 shadow-sm hover:border-dark-600'
                   : 'border-dark-700 bg-dark-800 text-dark-200 hover:border-dark-600'
@@ -238,15 +277,7 @@ export default function InstallationGuide({
               ))}
             </select>
             <div className="pointer-events-none absolute right-2.5 text-dark-400">
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l4-4 4 4M8 15l4 4 4-4" />
-              </svg>
+              <ChevronIcon className="h-4 w-4" />
             </div>
           </div>
         )}
@@ -272,7 +303,7 @@ export default function InstallationGuide({
                       : 'border border-dark-700/50 bg-dark-800/80 text-dark-200 hover:border-dark-600/50 hover:bg-dark-700/80'
                 }`}
               >
-                {app.featured && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />}
+                {app.featured && <span className="h-2 w-2 shrink-0 rounded-full bg-warning-400" />}
                 <span className="relative z-10 truncate">{app.name}</span>
                 {appIconSvg && (
                   <div
@@ -294,27 +325,17 @@ export default function InstallationGuide({
           rel="noopener noreferrer"
           className="btn-secondary w-full justify-center"
         >
-          <svg
-            className="h-5 w-5"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={1.5}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"
-            />
-          </svg>
+          <BookOpenIcon className="h-5 w-5" />
           {getBaseTranslation('tutorial', 'subscription.connection.tutorial')}
         </a>
       )}
 
-      {/* Blocks */}
+      {/* Blocks rendered in the panel's active style. For the Happ Android TV
+          app the TV connect widget is injected into a step (customNode), so it
+          adapts to that style instead of breaking it. */}
       {selectedApp && (
         <Renderer
-          blocks={selectedApp.blocks}
+          blocks={renderBlocks}
           isMobile={isMobile}
           isLight={isLight}
           getLocalizedText={getLocalizedText}

@@ -4,8 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { authApi } from '../api/auth';
 import { useAuthStore } from '../store/auth';
 import { useShallow } from 'zustand/shallow';
-import { consumeCampaignSlug } from '../utils/campaign';
+import { consumeCampaignSlug, getPendingCampaignSlug } from '../utils/campaign';
 import { tokenStorage } from '../utils/token';
+import { getApiErrorMessage } from '../utils/api-error';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
 export default function VerifyEmail() {
@@ -39,8 +40,9 @@ export default function VerifyEmail() {
 
     const verify = async () => {
       try {
-        const campaignSlug = consumeCampaignSlug();
+        const campaignSlug = getPendingCampaignSlug();
         const response = await authApi.verifyEmail(token, campaignSlug);
+        consumeCampaignSlug();
         // Save tokens and log user in
         tokenStorage.setTokens(response.access_token, response.refresh_token);
         setTokens(response.access_token, response.refresh_token);
@@ -54,8 +56,7 @@ export default function VerifyEmail() {
         redirectTimer = setTimeout(() => navigate('/', { replace: true }), 1500);
       } catch (err: unknown) {
         setStatus('error');
-        const error = err as { response?: { data?: { detail?: string } } };
-        setError(error.response?.data?.detail || t('emailVerification.failed'));
+        setError(getApiErrorMessage(err, t('emailVerification.failed')));
       }
     };
 
@@ -65,7 +66,7 @@ export default function VerifyEmail() {
   }, [searchParams, t, navigate, setTokens, setUser, checkAdminStatus]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-8 sm:py-12">
+    <div className="min-h-viewport flex items-center justify-center bg-dark-950 px-4 py-8 sm:py-12">
       {/* Language switcher in corner */}
       <div className="fixed right-4 top-4 z-50">
         <LanguageSwitcher />
@@ -74,11 +75,11 @@ export default function VerifyEmail() {
       <div className="w-full max-w-md text-center">
         {status === 'loading' && (
           <div>
-            <div className="border-primary-600 mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2"></div>
-            <h2 className="text-lg font-semibold text-gray-900 sm:text-xl">
+            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-accent-500 border-t-transparent"></div>
+            <h2 className="text-lg font-semibold text-dark-50 sm:text-xl">
               {t('emailVerification.verifying')}
             </h2>
-            <p className="mt-2 text-sm text-gray-500 sm:text-base">
+            <p className="mt-2 text-sm text-dark-400 sm:text-base">
               {t('emailVerification.pleaseWait')}
             </p>
           </div>
@@ -86,26 +87,26 @@ export default function VerifyEmail() {
 
         {status === 'success' && (
           <div>
-            <div className="mb-4 text-5xl text-green-500 sm:text-6xl">✓</div>
-            <h2 className="text-lg font-semibold text-gray-900 sm:text-xl">
+            <div className="mb-4 text-5xl text-success-500 sm:text-6xl">✓</div>
+            <h2 className="text-lg font-semibold text-dark-50 sm:text-xl">
               {t('emailVerification.success')}
             </h2>
-            <p className="mt-2 text-sm text-gray-500 sm:text-base">
+            <p className="mt-2 text-sm text-dark-400 sm:text-base">
               {t('emailVerification.redirecting', 'Redirecting to dashboard...')}
             </p>
             <div className="mt-4">
-              <div className="border-primary-600 mx-auto h-6 w-6 animate-spin rounded-full border-b-2"></div>
+              <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-accent-500 border-t-transparent"></div>
             </div>
           </div>
         )}
 
         {status === 'error' && (
           <div>
-            <div className="mb-4 text-5xl text-red-500 sm:text-6xl">✗</div>
-            <h2 className="text-lg font-semibold text-gray-900 sm:text-xl">
+            <div className="mb-4 text-5xl text-error-500 sm:text-6xl">✗</div>
+            <h2 className="text-lg font-semibold text-dark-50 sm:text-xl">
               {t('emailVerification.failed')}
             </h2>
-            <p className="mt-2 text-sm text-gray-500 sm:text-base">{error}</p>
+            <p className="mt-2 text-sm text-dark-400 sm:text-base">{error}</p>
             <div className="mt-6">
               <Link to="/login" className="btn-secondary">
                 {t('emailVerification.goToLogin')}

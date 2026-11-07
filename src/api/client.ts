@@ -1,5 +1,5 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { retrieveRawInitData } from '@telegram-apps/sdk-react';
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { getTelegramInitData as readTelegramInitData } from '../utils/telegramInitData';
 import {
   tokenStorage,
   isTokenExpired,
@@ -7,14 +7,13 @@ import {
   safeRedirectToLogin,
 } from '../utils/token';
 import { useBlockingStore } from '../store/blocking';
+import { isBackendUnavailableError, reportPossibleBackendDown, markBackendReached } from './health';
 import { API } from '../config/constants';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
-// Настраиваем endpoint для refresh
 tokenRefreshManager.setRefreshEndpoint(`${API_BASE_URL}/cabinet/auth/refresh`);
 
-// CSRF token management
 const CSRF_COOKIE_NAME = 'csrf_token';
 const CSRF_HEADER_NAME = 'X-CSRF-Token';
 
@@ -34,7 +33,6 @@ function ensureCsrfToken(): string {
   let token = getCsrfToken();
   if (!token) {
     token = generateCsrfToken();
-    // Set cookie with SameSite=Strict for CSRF protection
     document.cookie = `${CSRF_COOKIE_NAME}=${token}; path=/; SameSite=Strict; Secure`;
   }
   return token;
@@ -43,14 +41,10 @@ function ensureCsrfToken(): string {
 const getTelegramInitData = (): string | null => {
   if (typeof window === 'undefined') return null;
 
-  try {
-    const raw = retrieveRawInitData();
-    if (raw) {
-      tokenStorage.setTelegramInitData(raw);
-      return raw;
-    }
-  } catch {
-    // Not in Telegram or SDK not initialized
+  const raw = readTelegramInitData();
+  if (raw) {
+    tokenStorage.setTelegramInitData(raw);
+    return raw;
   }
 
   return tokenStorage.getTelegramInitData();
@@ -64,42 +58,59 @@ export const apiClient = axios.create({
   },
 });
 
-// Auth endpoints that don't need Bearer token or token refresh
 const AUTH_ENDPOINTS = [
   '/cabinet/auth/telegram',
   '/cabinet/auth/telegram/widget',
   '/cabinet/auth/email/login',
-  '/cabinet/auth/email/register',
+  '/cabinet/auth/email/register/standalone',
   '/cabinet/auth/email/verify',
   '/cabinet/auth/refresh',
   '/cabinet/auth/password/forgot',
   '/cabinet/auth/password/reset',
   '/cabinet/auth/oauth/',
+  '/cabinet/auth/account/link/server-complete',
+  '/cabinet/auth/deeplink/',
+  '/cabinet/auth/login/auto',
+  // Вход и регистрация по passkey, вход по recovery-коду: токена у человека ещё нет, а 401 здесь
+  // значит «ключ не подошёл», а не «протух токен» (иначе перехватчик ушёл бы в refresh и редирект).
+  '/cabinet/auth/passkey/',
+  '/cabinet/auth/recovery/',
+  '/cabinet/landing/',
 ];
 
-function isAuthEndpoint(url: string | undefined): boolean {
+export function isAuthEndpoint(url: string | undefined): boolean {
   if (!url) return false;
-  return AUTH_ENDPOINTS.some((endpoint) => url.includes(endpoint));
+  return AUTH_ENDPOINTS.some((endpoint) => url.startsWith(endpoint));
 }
 
-// Request interceptor - add auth token with expiration check
 apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
-  // Skip token refresh and Bearer header for auth endpoints
-  // These endpoints authenticate via init_data/credentials, not Bearer tokens
+  // Let axios set the correct multipart/form-data header with boundary for FormData
+  if (config.data instanceof FormData && config.headers) {
+    delete config.headers['Content-Type'];
+  }
+
   if (!isAuthEndpoint(config.url)) {
     let token = tokenStorage.getAccessToken();
 
-    // Проверяем срок действия токена перед запросом
     if (token && isTokenExpired(token)) {
-      // Используем централизованный менеджер для refresh
       const newToken = await tokenRefreshManager.refreshAccessToken();
       if (newToken) {
         token = newToken;
+      } else if (tokenRefreshManager.lastFailureWasTransport) {
+        // Backend unreachable (not a rejected token): keep the session intact so
+        // the ServiceUnavailableScreen can auto-recover once the backend returns,
+        // instead of wiping tokens and stranding the user on /login. Let the
+        // request go out with the stale token; it will fail and be handled.
+        return config;
       } else {
-        // Refresh не удался - редирект на логин
         tokenStorage.clearTokens();
         safeRedirectToLogin();
         return config;
+      }
+    } else if (!token && tokenStorage.getRefreshToken()) {
+      const newToken = await tokenRefreshManager.refreshAccessToken();
+      if (newToken) {
+        token = newToken;
       }
     }
 
@@ -108,12 +119,16 @@ apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) =>
     }
   }
 
-  const telegramInitData = getTelegramInitData();
-  if (telegramInitData && config.headers) {
-    config.headers['X-Telegram-Init-Data'] = telegramInitData;
+  const isTelegramAuthEndpoint =
+    config.url?.startsWith('/cabinet/auth/telegram') ||
+    config.url?.startsWith('/cabinet/auth/account/link/telegram');
+  if (isTelegramAuthEndpoint) {
+    const telegramInitData = getTelegramInitData();
+    if (telegramInitData && config.headers) {
+      config.headers['X-Telegram-Init-Data'] = telegramInitData;
+    }
   }
 
-  // Add CSRF token for state-changing methods
   const method = config.method?.toUpperCase();
   if (method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method) && config.headers) {
     config.headers[CSRF_HEADER_NAME] = ensureCsrfToken();
@@ -122,7 +137,6 @@ apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) =>
   return config;
 });
 
-// Custom error types for special handling
 export interface MaintenanceError {
   code: 'maintenance';
   message: string;
@@ -144,6 +158,13 @@ export interface ChannelSubscriptionError {
 export interface BlacklistedError {
   code: 'blacklisted';
   message: string;
+}
+
+export interface AccountDeletedError {
+  code: 'account_deleted';
+  message: string;
+  bot_username?: string;
+  telegram_deep_link?: string;
 }
 
 export function isMaintenanceError(
@@ -173,13 +194,37 @@ export function isBlacklistedError(
   return err.response?.status === 403 && err.response?.data?.detail?.code === 'blacklisted';
 }
 
-// Response interceptor - handle 401, 503 (maintenance), 403 (channel subscription)
+export function isAccountDeletedError(
+  error: unknown,
+): error is { response: { status: 403; data: { detail: AccountDeletedError } } } {
+  if (!error || typeof error !== 'object') return false;
+  const err = error as AxiosError<{ detail: AccountDeletedError }>;
+  return err.response?.status === 403 && err.response?.data?.detail?.code === 'account_deleted';
+}
+
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // First successful response means the app reached the backend at least once
+    // (it bootstrapped). Recovery from a later outage can then just lift the
+    // overlay instead of hard-reloading and losing unsaved UI state.
+    markBackendReached();
+    return response;
+  },
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    // Handle maintenance mode (503)
+    // Transport-level failure: no HTTP response at all (backend unreachable, DNS
+    // failure, connection refused, timeout). All the coded guards below need
+    // `error.response`, so this case had zero handling and produced a blank
+    // screen during bootstrap. Confirm the outage with a liveness probe (so a
+    // one-off blip doesn't blank an already-loaded app) and, if confirmed, flip
+    // the full-screen ServiceUnavailableScreen. Fire-and-forget — the original
+    // request still rejects now. Axios cancellations are not outages.
+    if (!error.response && error.code !== 'ERR_CANCELED') {
+      void reportPossibleBackendDown();
+      return Promise.reject(error);
+    }
+
     if (isMaintenanceError(error)) {
       const detail = (error.response?.data as { detail: MaintenanceError }).detail;
       useBlockingStore.getState().setMaintenance({
@@ -189,7 +234,11 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // Handle channel subscription required (403)
+    if (isBackendUnavailableError(error)) {
+      void reportPossibleBackendDown();
+      return Promise.reject(error);
+    }
+
     if (isChannelSubscriptionError(error)) {
       const detail = (error.response?.data as { detail: ChannelSubscriptionError }).detail;
       useBlockingStore.getState().setChannelSubscription({
@@ -200,7 +249,6 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // Handle blacklisted user (403)
     if (isBlacklistedError(error)) {
       const detail = (error.response?.data as { detail: BlacklistedError }).detail;
       useBlockingStore.getState().setBlacklisted({
@@ -209,19 +257,25 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // Если получили 401 и ещё не пробовали refresh (на случай если проверка exp не сработала)
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      // Не обрабатываем 401 для авторизационных endpoints - пусть ошибка дойдет до компонента
-      const authEndpoints = [
-        '/cabinet/auth/email/login',
-        '/cabinet/auth/telegram',
-        '/cabinet/auth/telegram/widget',
-      ];
-      const requestUrl = originalRequest.url || '';
-      const isAuthEndpoint = authEndpoints.some((endpoint) => requestUrl.includes(endpoint));
+    if (isAccountDeletedError(error)) {
+      const detail = (error.response?.data as { detail: AccountDeletedError }).detail;
+      // Surface the deleted-account screen. The auth flow (initData login)
+      // is allowed to auto-revive; this branch is for token-bearing
+      // sessions where the user is already in the cabinet but their row
+      // got marked DELETED out-of-band, and for password-only logins
+      // that can't be silently revived.
+      useBlockingStore.getState().setAccountDeleted({
+        message: detail.message,
+        bot_username: detail.bot_username,
+        telegram_deep_link: detail.telegram_deep_link,
+      });
+      return Promise.reject(error);
+    }
 
-      if (isAuthEndpoint) {
-        // Пробрасываем ошибку в компонент для показа сообщения пользователю
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      const requestUrl = originalRequest.url || '';
+
+      if (isAuthEndpoint(requestUrl)) {
         return Promise.reject(error);
       }
 
@@ -233,8 +287,10 @@ apiClient.interceptors.response.use(
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
         }
         return apiClient(originalRequest);
+      } else if (tokenRefreshManager.lastFailureWasTransport) {
+        // Backend died between the 401 and the refresh: keep the session so the
+        // ServiceUnavailableScreen can recover, rather than logging the user out.
       } else {
-        // Refresh не удался
         tokenStorage.clearTokens();
         safeRedirectToLogin();
       }

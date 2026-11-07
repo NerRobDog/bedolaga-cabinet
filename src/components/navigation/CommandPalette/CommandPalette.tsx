@@ -78,7 +78,7 @@ export function CommandPalette({
   // Navigation items
   const navigationItems = [
     { label: t('nav.dashboard'), icon: HomeIcon, path: '/' },
-    { label: t('nav.subscription'), icon: SubscriptionIcon, path: '/subscription' },
+    { label: t('nav.subscription'), icon: SubscriptionIcon, path: '/subscriptions' },
     { label: t('nav.balance'), icon: WalletIcon, path: '/balance' },
     ...(referralEnabled ? [{ label: t('nav.referral'), icon: UsersIcon, path: '/referral' }] : []),
     { label: t('nav.support'), icon: ChatIcon, path: '/support' },
@@ -100,7 +100,7 @@ export function CommandPalette({
     {
       label: t('subscription.get_config') || 'Get VPN config',
       icon: DownloadIcon,
-      action: () => navigate('/subscription'),
+      action: () => navigate('/subscriptions'),
     },
     {
       label: isDark ? t('theme.light') || 'Light mode' : t('theme.dark') || 'Dark mode',
@@ -123,7 +123,7 @@ export function CommandPalette({
               {/* Backdrop */}
               <DialogPrimitive.Overlay asChild>
                 <motion.div
-                  className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+                  className="fixed inset-0 z-50 bg-dark-950/60 backdrop-blur-sm"
                   variants={backdrop}
                   initial="initial"
                   animate="animate"

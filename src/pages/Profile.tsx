@@ -1,73 +1,40 @@
+import { uiLocale } from '@/utils/uiLocale';
 import { useState, useRef, useEffect } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { usePlatform } from '@/platform';
+import { copyToClipboard } from '@/utils/clipboard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../store/auth';
+import { displayName } from '../utils/displayName';
 import { authApi } from '../api/auth';
 import { isValidEmail } from '../utils/validation';
+import { useCountdown } from '../hooks/useCountdown';
+import { getApiErrorMessage } from '../utils/api-error';
 import {
   notificationsApi,
-  NotificationSettings,
-  NotificationSettingsUpdate,
+  type NotificationSettings,
+  type NotificationSettingsUpdate,
 } from '../api/notifications';
 import { referralApi } from '../api/referral';
 import { brandingApi, type EmailAuthEnabled } from '../api/branding';
 import { UI } from '../config/constants';
 import { Card } from '@/components/data-display/Card';
+import { InfoRow } from '@/components/data-display/InfoRow';
 import { Button } from '@/components/primitives/Button';
 import { Switch } from '@/components/primitives/Switch';
 import { staggerContainer, staggerItem } from '@/components/motion/transitions';
-
-// Icons
-const CopyIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"
-    />
-  </svg>
-);
-
-const CheckIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-  </svg>
-);
-
-const ShareIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M7 8l5-5m0 0l5 5m-5-5v12" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" />
-  </svg>
-);
-
-const ArrowRightIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-  </svg>
-);
-
-const PencilIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"
-    />
-  </svg>
-);
+import { CopyIcon, CheckIcon, ShareIcon, ArrowRightIcon, PencilIcon } from '@/components/icons';
+import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton';
 
 export default function Profile() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const setUser = useAuthStore((state) => state.setUser);
   const queryClient = useQueryClient();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -77,8 +44,8 @@ export default function Profile() {
   const [newEmail, setNewEmail] = useState('');
   const [changeCode, setChangeCode] = useState('');
   const [changeError, setChangeError] = useState<string | null>(null);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const [verificationResendCooldown, setVerificationResendCooldown] = useState(0);
+  const [resendCooldown, startResendCooldown] = useCountdown();
+  const [verificationResendCooldown, startVerificationResendCooldown] = useCountdown();
   const newEmailInputRef = useRef<HTMLInputElement>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
 
@@ -106,6 +73,7 @@ export default function Profile() {
     staleTime: 60000,
   });
   const isEmailAuthEnabled = emailAuthConfig?.enabled ?? true;
+  const isEmailVerificationEnabled = emailAuthConfig?.verification_enabled ?? true;
 
   // Build referral link for cabinet
   const referralLink = referralInfo?.referral_code
@@ -114,7 +82,7 @@ export default function Profile() {
 
   const copyReferralLink = () => {
     if (referralLink) {
-      navigator.clipboard.writeText(referralLink);
+      void copyToClipboard(referralLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -139,44 +107,18 @@ export default function Profile() {
     }
 
     const telegramUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareText)}`;
-    window.open(telegramUrl, '_blank', 'noopener,noreferrer');
+    openTelegramLink(telegramUrl);
   };
-
-  const registerEmailMutation = useMutation({
-    mutationFn: ({ email, password }: { email: string; password: string }) =>
-      authApi.registerEmail(email, password),
-    onSuccess: async () => {
-      setSuccess(t('profile.emailSent'));
-      setError(null);
-      setEmail('');
-      setPassword('');
-      setConfirmPassword('');
-      const updatedUser = await authApi.getMe();
-      setUser(updatedUser);
-      queryClient.invalidateQueries({ queryKey: ['user'] });
-    },
-    onError: (err: { response?: { data?: { detail?: string } } }) => {
-      const detail = err.response?.data?.detail;
-      if (detail?.includes('already registered')) {
-        setError(t('profile.emailAlreadyRegistered'));
-      } else if (detail?.includes('already have a verified email')) {
-        setError(t('profile.alreadyHaveEmail'));
-      } else {
-        setError(detail || t('common.error'));
-      }
-      setSuccess(null);
-    },
-  });
 
   const resendVerificationMutation = useMutation({
     mutationFn: authApi.resendVerification,
     onSuccess: () => {
       setSuccess(t('profile.verificationResent'));
       setError(null);
-      setVerificationResendCooldown(UI.RESEND_COOLDOWN_SEC);
+      startVerificationResendCooldown(UI.RESEND_COOLDOWN_SEC);
     },
-    onError: (err: { response?: { data?: { detail?: string } } }) => {
-      setError(err.response?.data?.detail || t('common.error'));
+    onError: (err: unknown) => {
+      setError(getApiErrorMessage(err, t('common.error')));
       setSuccess(null);
     },
   });
@@ -193,16 +135,16 @@ export default function Profile() {
         setUser(updatedUser);
       } else {
         setChangeEmailStep('code');
-        setResendCooldown(UI.RESEND_COOLDOWN_SEC);
+        startResendCooldown(UI.RESEND_COOLDOWN_SEC);
       }
     },
-    onError: (err: { response?: { data?: { detail?: string } } }) => {
-      const detail = err.response?.data?.detail;
-      if (detail?.includes('already registered') || detail?.includes('already in use')) {
+    onError: (err: unknown) => {
+      const detail = getApiErrorMessage(err, '');
+      if (detail.includes('already registered') || detail.includes('already in use')) {
         setChangeError(t('profile.changeEmail.emailAlreadyUsed'));
-      } else if (detail?.includes('same as current')) {
+      } else if (detail.includes('same as current')) {
         setChangeError(t('profile.changeEmail.sameEmail'));
-      } else if (detail?.includes('rate limit') || detail?.includes('too many')) {
+      } else if (detail.includes('rate limit') || detail.includes('too many')) {
         setChangeError(t('profile.changeEmail.tooManyRequests'));
       } else {
         setChangeError(detail || t('common.error'));
@@ -217,13 +159,14 @@ export default function Profile() {
       setChangeEmailStep('success');
       const updatedUser = await authApi.getMe();
       setUser(updatedUser);
-      queryClient.invalidateQueries({ queryKey: ['user'] });
+      // Note: auth user lives in the zustand store, not in React Query —
+      // the explicit setUser above IS the refresh. No ['user'] query exists.
     },
-    onError: (err: { response?: { data?: { detail?: string } } }) => {
-      const detail = err.response?.data?.detail;
-      if (detail?.includes('invalid') || detail?.includes('wrong')) {
+    onError: (err: unknown) => {
+      const detail = getApiErrorMessage(err, '');
+      if (detail.includes('invalid') || detail.includes('wrong')) {
         setChangeError(t('profile.changeEmail.invalidCode'));
-      } else if (detail?.includes('expired')) {
+      } else if (detail.includes('expired')) {
         setChangeError(t('profile.changeEmail.codeExpired'));
       } else {
         setChangeError(detail || t('common.error'));
@@ -231,31 +174,16 @@ export default function Profile() {
     },
   });
 
-  // Resend cooldown timers
+  // Auto-focus inputs on step change (skip on Telegram — keyboard hides bottom nav)
+  const { platform: profilePlatform, openTelegramLink } = usePlatform();
   useEffect(() => {
-    if (resendCooldown <= 0) return;
-    const timer = setInterval(() => {
-      setResendCooldown((prev) => Math.max(0, prev - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [resendCooldown]);
-
-  useEffect(() => {
-    if (verificationResendCooldown <= 0) return;
-    const timer = setInterval(() => {
-      setVerificationResendCooldown((prev) => Math.max(0, prev - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [verificationResendCooldown]);
-
-  // Auto-focus inputs on step change
-  useEffect(() => {
+    if (profilePlatform === 'telegram') return;
     const timer = setTimeout(() => {
       if (changeEmailStep === 'email') newEmailInputRef.current?.focus();
       else if (changeEmailStep === 'code') codeInputRef.current?.focus();
     }, 100);
     return () => clearTimeout(timer);
-  }, [changeEmailStep]);
+  }, [changeEmailStep, profilePlatform]);
 
   // Auto-close success after 3s
   useEffect(() => {
@@ -269,7 +197,7 @@ export default function Profile() {
     setNewEmail('');
     setChangeCode('');
     setChangeError(null);
-    setResendCooldown(0);
+    startResendCooldown(0);
   };
 
   const handleSendChangeCode = () => {
@@ -329,29 +257,6 @@ export default function Profile() {
     updateNotificationsMutation.mutate(update);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-
-    if (!email.trim() || !isValidEmail(email.trim())) {
-      setError(t('profile.invalidEmail', 'Please enter a valid email address'));
-      return;
-    }
-
-    if (!password || password.length < 8) {
-      setError(t('profile.passwordMinLength'));
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setError(t('profile.passwordsMismatch'));
-      return;
-    }
-
-    registerEmailMutation.mutate({ email, password });
-  };
-
   return (
     <motion.div
       className="space-y-6"
@@ -368,35 +273,41 @@ export default function Profile() {
         <Card>
           <h2 className="mb-6 text-lg font-semibold text-dark-100">{t('profile.accountInfo')}</h2>
           <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-dark-800/50 py-3">
-              <span className="text-dark-400">{t('profile.telegramId')}</span>
-              <span className="font-medium text-dark-100">{user?.telegram_id}</span>
-            </div>
+            <InfoRow divider label={t('profile.telegramId')} value={user?.telegram_id} />
             {user?.username && (
-              <div className="flex items-center justify-between border-b border-dark-800/50 py-3">
-                <span className="text-dark-400">{t('profile.username')}</span>
-                <span className="font-medium text-dark-100">@{user.username}</span>
-              </div>
+              <InfoRow divider label={t('profile.username')} value={`@${user.username}`} />
             )}
-            <div className="flex items-center justify-between border-b border-dark-800/50 py-3">
-              <span className="text-dark-400">{t('profile.name')}</span>
-              <span className="font-medium text-dark-100">
-                {user?.first_name} {user?.last_name}
-              </span>
-            </div>
-            <div className="flex items-center justify-between py-3">
-              <span className="text-dark-400">{t('profile.registeredAt')}</span>
-              <span className="font-medium text-dark-100">
-                {user?.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
-              </span>
-            </div>
+            <InfoRow divider label={t('profile.name')} value={displayName(user)} />
+            <InfoRow
+              label={t('profile.registeredAt')}
+              value={
+                user?.created_at ? new Date(user.created_at).toLocaleDateString(uiLocale()) : '-'
+              }
+            />
           </div>
         </Card>
       </motion.div>
 
-      {/* Referral Link Widget */}
+      {/* Connected Accounts Link */}
+      <motion.div variants={staggerItem}>
+        <Card interactive onClick={() => navigate('/profile/accounts')}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-dark-100">
+                {t('profile.accounts.goToAccounts')}
+              </h2>
+              <p className="text-sm text-dark-400">{t('profile.accounts.subtitle')}</p>
+            </div>
+            <ArrowRightIcon className="h-5 w-5 text-dark-400" />
+          </div>
+        </Card>
+      </motion.div>
+
+      {/* Referral Link Widget — self-animated: mounts after the referral queries
+          resolve, when the parent stagger orchestration has already finished and
+          would leave it stuck at opacity 0 */}
       {referralTerms?.is_enabled && referralLink && (
-        <motion.div variants={staggerItem}>
+        <motion.div variants={staggerItem} initial="initial" animate="animate">
           <Card>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-dark-100">{t('referral.yourLink')}</h2>
@@ -405,7 +316,7 @@ export default function Profile() {
                 className="flex items-center gap-1 text-accent-400 transition-colors hover:text-accent-300"
               >
                 <span className="text-sm">{t('referral.title')}</span>
-                <ArrowRightIcon />
+                <ArrowRightIcon className="h-4 w-4" />
               </Link>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -424,7 +335,7 @@ export default function Profile() {
                   </span>
                 </Button>
                 <Button onClick={shareReferralLink} variant="secondary">
-                  <ShareIcon />
+                  <ShareIcon className="h-4 w-4" />
                   <span className="ml-2 hidden sm:inline">{t('referral.shareButton')}</span>
                 </Button>
               </div>
@@ -444,24 +355,27 @@ export default function Profile() {
 
             {user?.email ? (
               <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-dark-800/50 py-3">
-                  <span className="text-dark-400">Email</span>
-                  <div className="flex items-center gap-3">
-                    <span className="font-medium text-dark-100">{user.email}</span>
-                    {user.email_verified ? (
-                      <span className="badge-success">{t('profile.verified')}</span>
-                    ) : (
-                      <span className="badge-warning">{t('profile.notVerified')}</span>
-                    )}
-                  </div>
-                </div>
+                <InfoRow
+                  divider
+                  label="Email"
+                  value={
+                    <>
+                      <span>{user.email}</span>
+                      {user.email_verified ? (
+                        <span className="badge-success">{t('profile.verified')}</span>
+                      ) : isEmailVerificationEnabled ? (
+                        <span className="badge-warning">{t('profile.notVerified')}</span>
+                      ) : null}
+                    </>
+                  }
+                />
 
-                {!user.email_verified && (
+                {!user.email_verified && isEmailVerificationEnabled && (
                   <div className="rounded-linear border border-warning-500/30 bg-warning-500/10 p-4">
                     <p className="mb-4 text-sm text-warning-400">
                       {t('profile.verificationRequired')}
                     </p>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       <Button
                         onClick={() => resendVerificationMutation.mutate()}
                         loading={resendVerificationMutation.isPending}
@@ -471,26 +385,28 @@ export default function Profile() {
                           ? t('profile.resendIn', { seconds: verificationResendCooldown })
                           : t('profile.resendVerification')}
                       </Button>
-                      <button
-                        onClick={() => setChangeEmailStep('email')}
-                        className="text-sm text-accent-400 transition-colors hover:text-accent-300"
-                      >
+                      <Button variant="secondary" onClick={() => setChangeEmailStep('email')}>
+                        <PencilIcon className="h-4 w-4" />
                         {t('profile.changeEmail.button')}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}
 
                 {user.email_verified && (
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-dark-400">{t('profile.canLoginWithEmail')}</p>
-                    <button
+                  // Кнопка не сжимается в две строки: не хватает места — уходит под текст.
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="min-w-0 flex-1 basis-48 text-sm text-dark-400">
+                      {t('profile.canLoginWithEmail')}
+                    </p>
+                    <Button
+                      variant="secondary"
+                      className="shrink-0 whitespace-nowrap"
                       onClick={() => setChangeEmailStep('email')}
-                      className="flex items-center gap-2 text-sm text-accent-400 transition-colors hover:text-accent-300"
                     >
-                      <PencilIcon />
-                      <span>{t('profile.changeEmail.button')}</span>
-                    </button>
+                      <PencilIcon className="h-4 w-4" />
+                      {t('profile.changeEmail.button')}
+                    </Button>
                   </div>
                 )}
 
@@ -524,7 +440,7 @@ export default function Profile() {
                           autoComplete="email"
                         />
                         {changeError && <p className="text-sm text-error-400">{changeError}</p>}
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
                           <Button
                             onClick={handleSendChangeCode}
                             loading={requestEmailChangeMutation.isPending}
@@ -532,12 +448,9 @@ export default function Profile() {
                           >
                             {t('profile.changeEmail.sendCode')}
                           </Button>
-                          <button
-                            onClick={resetChangeEmail}
-                            className="text-sm text-dark-400 hover:text-dark-200"
-                          >
+                          <Button variant="secondary" onClick={resetChangeEmail}>
                             {t('common.cancel')}
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     </motion.div>
@@ -578,35 +491,34 @@ export default function Profile() {
                           autoComplete="one-time-code"
                         />
                         {changeError && <p className="text-sm text-error-400">{changeError}</p>}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <Button
-                              onClick={handleVerifyChangeCode}
-                              loading={verifyEmailChangeMutation.isPending}
-                              disabled={!changeCode.trim()}
-                            >
-                              {t('profile.changeEmail.verify')}
-                            </Button>
-                            <button
-                              onClick={() => {
-                                setChangeEmailStep('email');
-                                setChangeCode('');
-                                setChangeError(null);
-                              }}
-                              className="text-sm text-dark-400 hover:text-dark-200"
-                            >
-                              {t('common.back')}
-                            </button>
-                          </div>
-                          <button
+                        {/* Три действия на телефон в строку не влезают — переносятся. */}
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Button
+                            onClick={handleVerifyChangeCode}
+                            loading={verifyEmailChangeMutation.isPending}
+                            disabled={!changeCode.trim()}
+                          >
+                            {t('profile.changeEmail.verify')}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setChangeEmailStep('email');
+                              setChangeCode('');
+                              setChangeError(null);
+                            }}
+                          >
+                            {t('common.back')}
+                          </Button>
+                          <Button
+                            variant="secondary"
                             onClick={handleResendChangeCode}
                             disabled={resendCooldown > 0 || requestEmailChangeMutation.isPending}
-                            className={`text-sm ${resendCooldown > 0 ? 'text-dark-500' : 'text-accent-400 hover:text-accent-300'}`}
                           >
                             {resendCooldown > 0
                               ? t('profile.changeEmail.resendIn', { seconds: resendCooldown })
                               : t('profile.changeEmail.resendCode')}
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     </motion.div>
@@ -636,60 +548,11 @@ export default function Profile() {
                 </AnimatePresence>
               </div>
             ) : (
-              <div>
-                <p className="mb-6 text-sm text-dark-400">{t('profile.linkEmailDescription')}</p>
-
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div>
-                    <label className="label">Email</label>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="your@email.com"
-                      className="input"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="label">{t('auth.password')}</label>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder={t('profile.passwordPlaceholder')}
-                      className="input"
-                    />
-                    <p className="mt-2 text-xs text-dark-500">{t('profile.passwordHint')}</p>
-                  </div>
-
-                  <div>
-                    <label className="label">{t('auth.confirmPassword')}</label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder={t('profile.confirmPasswordPlaceholder')}
-                      className="input"
-                    />
-                  </div>
-
-                  {error && (
-                    <div className="rounded-linear border border-error-500/30 bg-error-500/10 p-4 text-sm text-error-400">
-                      {error}
-                    </div>
-                  )}
-
-                  {success && (
-                    <div className="rounded-linear border border-success-500/30 bg-success-500/10 p-4 text-sm text-success-400">
-                      {success}
-                    </div>
-                  )}
-
-                  <Button type="submit" fullWidth loading={registerEmailMutation.isPending}>
-                    {t('profile.linkEmail')}
-                  </Button>
-                </form>
+              <div className="space-y-3">
+                <p className="text-sm text-dark-400">{t('profile.linkEmailDescription')}</p>
+                <Button variant="primary" onClick={() => navigate('/profile/accounts')}>
+                  {t('profile.linkEmail')}
+                </Button>
               </div>
             )}
 
@@ -719,9 +582,9 @@ export default function Profile() {
           </h2>
 
           {notificationsLoading ? (
-            <div className="flex justify-center py-4">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-            </div>
+            <SkeletonGroup className="space-y-3">
+              <Skeleton variant="card" count={3} className="h-16" />
+            </SkeletonGroup>
           ) : notificationSettings ? (
             <div className="space-y-6">
               {/* Subscription Expiry */}

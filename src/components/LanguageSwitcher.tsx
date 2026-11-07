@@ -1,19 +1,26 @@
 import { useTranslation } from 'react-i18next';
 import { useState, useRef, useEffect } from 'react';
-
-const languages = [
-  { code: 'ru', name: 'RU', flag: '🇷🇺', fullName: 'Русский' },
-  { code: 'en', name: 'EN', flag: '🇬🇧', fullName: 'English' },
-  { code: 'zh', name: 'ZH', flag: '🇨🇳', fullName: '中文' },
-  { code: 'fa', name: 'FA', flag: '🇮🇷', fullName: 'فارسی' },
-];
+import { useQuery } from '@tanstack/react-query';
+import { infoApi } from '@/api/info';
+import { ChevronDownIcon } from '@/components/icons';
 
 export default function LanguageSwitcher() {
   const { i18n } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const currentLang = languages.find((l) => l.code === i18n.language) || languages[0];
+  // Кэш react-query переживает перемонтирование AppShell при смене роута:
+  // локальный useState начинал каждый маунт с пустого списка, и до ответа API
+  // компонент рендерил null — переключатель «мигал» при каждой навигации.
+  const { data } = useQuery({
+    queryKey: ['languages'],
+    queryFn: infoApi.getLanguages,
+    staleTime: 1000 * 60 * 5,
+  });
+  const availableLanguages = data?.languages ?? [];
+
+  const currentLang = availableLanguages.find((l) => l.code === i18n.language) ||
+    availableLanguages[0] || { code: 'ru', name: 'RU', flag: '🇷🇺' };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -26,16 +33,15 @@ export default function LanguageSwitcher() {
   }, []);
 
   const changeLanguage = (code: string) => {
+    // i18n.ts subscribes to languageChanged and syncs <html lang> + dir
+    // centrally — no need to set documentElement.dir here.
     i18n.changeLanguage(code);
-    // Set document direction for RTL languages
-    document.documentElement.dir = code === 'fa' ? 'rtl' : 'ltr';
     setIsOpen(false);
   };
 
-  // Set initial direction on mount
-  useEffect(() => {
-    document.documentElement.dir = i18n.language === 'fa' ? 'rtl' : 'ltr';
-  }, [i18n.language]);
+  if (availableLanguages.length <= 1) {
+    return null;
+  }
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -49,20 +55,15 @@ export default function LanguageSwitcher() {
         aria-label="Change language"
       >
         <span>{currentLang.flag}</span>
-        <span className="font-medium text-dark-200">{currentLang.name}</span>
-        <svg
+        <span className="font-medium text-dark-200">{currentLang.code.toUpperCase()}</span>
+        <ChevronDownIcon
           className={`h-3.5 w-3.5 text-dark-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        />
       </button>
 
       {isOpen && (
         <div className="absolute right-0 z-50 mt-2 w-40 animate-fade-in rounded-xl border border-dark-700/50 bg-dark-800 py-1 shadow-lg">
-          {languages.map((lang) => (
+          {availableLanguages.map((lang) => (
             <button
               key={lang.code}
               onClick={() => changeLanguage(lang.code)}
@@ -73,7 +74,7 @@ export default function LanguageSwitcher() {
               }`}
             >
               <span>{lang.flag}</span>
-              <span>{lang.fullName}</span>
+              <span>{lang.name}</span>
             </button>
           ))}
         </div>

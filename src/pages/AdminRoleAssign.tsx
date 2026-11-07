@@ -7,78 +7,20 @@ import { adminUsersApi, type UserListItem } from '@/api/adminUsers';
 import { PermissionGate } from '@/components/auth/PermissionGate';
 import { usePermissionStore } from '@/store/permissions';
 import { usePlatform } from '@/platform/hooks/usePlatform';
-
-// === Icons ===
-
-const BackIcon = () => (
-  <svg
-    className="h-5 w-5 text-dark-400"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-  </svg>
-);
-
-const SearchIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
-    />
-  </svg>
-);
-
-const ChevronDownIcon = ({ className }: { className?: string }) => (
-  <svg
-    className={className || 'h-4 w-4'}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-  </svg>
-);
-
-const ChevronLeftIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-  </svg>
-);
-
-const ChevronRightIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-  </svg>
-);
-
-const XCircleIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-    />
-  </svg>
-);
-
-const UserPlusIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z"
-    />
-  </svg>
-);
+import {
+  BackIcon,
+  SearchIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  XCircleIcon,
+  UserPlusIcon,
+} from '@/components/icons';
 
 // === Constants ===
 
 const PAGE_SIZE = 10;
+const SUPERADMIN_LEVEL = 999;
 
 // === Sub-components ===
 
@@ -133,7 +75,7 @@ function UserSearchDropdown({
           className="shrink-0 text-dark-400 transition-colors hover:text-dark-200"
           aria-label={t('admin.roleAssign.clearUser')}
         >
-          <XCircleIcon />
+          <XCircleIcon className="h-4 w-4" />
         </button>
       </div>
     );
@@ -188,9 +130,11 @@ function UserSearchDropdown({
                     <div className="truncate text-sm font-medium text-dark-100">
                       {user.full_name}
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-dark-400">
-                      {user.username && <span>@{user.username}</span>}
-                      <span>ID: {user.telegram_id}</span>
+                    <div className="flex flex-wrap items-center gap-x-2 text-xs text-dark-400">
+                      {user.username && (
+                        <span className="min-w-0 [overflow-wrap:anywhere]">@{user.username}</span>
+                      )}
+                      <span className="whitespace-nowrap">ID: {user.telegram_id}</span>
                     </div>
                   </div>
                 </button>
@@ -278,10 +222,10 @@ export default function AdminRoleAssign() {
     enabled: !!roles && roles.length > 0,
   });
 
-  // Available roles filtered by canManageRole
+  // Available roles filtered by canManageRole (superadmin excluded — env-only)
   const assignableRoles = useMemo(() => {
     if (!roles) return [];
-    return roles.filter((r) => r.is_active && canManageRole(r.level));
+    return roles.filter((r) => r.is_active && r.level < SUPERADMIN_LEVEL && canManageRole(r.level));
   }, [roles, canManageRole]);
 
   // Roles map for quick lookup
@@ -350,7 +294,7 @@ export default function AdminRoleAssign() {
   }, []);
 
   const handleAssign = useCallback(
-    (e: React.FormEvent) => {
+    (e: React.SyntheticEvent) => {
       e.preventDefault();
       setFormError(null);
       setFormSuccess(null);
@@ -398,7 +342,7 @@ export default function AdminRoleAssign() {
         {!capabilities.hasBackButton && (
           <button
             onClick={() => navigate('/admin')}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
           >
             <BackIcon />
           </button>
@@ -435,7 +379,7 @@ export default function AdminRoleAssign() {
             {/* Role dropdown + Expiry in row */}
             <div className="flex flex-col gap-4 sm:flex-row">
               {/* Role dropdown */}
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <label
                   htmlFor="assign-role"
                   className="mb-1 block text-sm font-medium text-dark-200"
@@ -463,7 +407,7 @@ export default function AdminRoleAssign() {
               </div>
 
               {/* Expiry date */}
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <label
                   htmlFor="assign-expires"
                   className="mb-1 block text-sm font-medium text-dark-200"
@@ -490,7 +434,7 @@ export default function AdminRoleAssign() {
               <button
                 type="submit"
                 disabled={assignMutation.isPending || !selectedUser || !selectedRoleId}
-                className="flex items-center gap-2 rounded-lg bg-accent-500 px-5 py-2 text-white transition-colors hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-2 rounded-lg bg-accent-500 px-5 py-2 text-on-accent transition-colors hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {assignMutation.isPending
                   ? t('admin.roleAssign.assigning')
@@ -627,20 +571,29 @@ export default function AdminRoleAssign() {
 
                     {/* Actions */}
                     <div className="col-span-1 flex justify-end sm:justify-start">
-                      <PermissionGate permission="roles:assign">
-                        <button
-                          onClick={() => setRevokeConfirm(assignment.id)}
-                          disabled={!canRevoke}
-                          className="rounded-lg p-1.5 text-dark-400 transition-colors hover:bg-error-500/20 hover:text-error-400 disabled:cursor-not-allowed disabled:opacity-40"
-                          title={t('admin.roleAssign.revoke')}
-                          aria-label={t('admin.roleAssign.revokeAriaLabel', {
-                            user: assignment.user_first_name || assignment.user_id,
-                            role: assignment.role_name,
-                          })}
+                      {assignment.role_level >= SUPERADMIN_LEVEL ? (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10px] font-medium text-dark-500"
+                          title={t('admin.roleAssign.envManaged')}
                         >
-                          <XCircleIcon />
-                        </button>
-                      </PermissionGate>
+                          ENV
+                        </span>
+                      ) : (
+                        <PermissionGate permission="roles:assign">
+                          <button
+                            onClick={() => setRevokeConfirm(assignment.id)}
+                            disabled={!canRevoke}
+                            className="rounded-lg p-1.5 text-dark-400 transition-colors hover:bg-error-500/20 hover:text-error-400 disabled:cursor-not-allowed disabled:opacity-40"
+                            title={t('admin.roleAssign.revoke')}
+                            aria-label={t('admin.roleAssign.revokeAriaLabel', {
+                              user: assignment.user_first_name || assignment.user_id,
+                              role: assignment.role_name,
+                            })}
+                          >
+                            <XCircleIcon className="h-4 w-4" />
+                          </button>
+                        </PermissionGate>
+                      )}
                     </div>
                   </div>
                 );

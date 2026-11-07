@@ -1,82 +1,21 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { rbacApi, AuditLogEntry, AuditLogFilters } from '@/api/rbac';
+import type { TFunction } from 'i18next';
+import { rbacApi, type AuditLogEntry, type AuditLogFilters } from '@/api/rbac';
 import { PermissionGate } from '@/components/auth/PermissionGate';
+import { DateField } from '@/components/DateField';
 import { usePlatform } from '@/platform/hooks/usePlatform';
-
-// === Icons ===
-
-const BackIcon = () => (
-  <svg
-    className="h-5 w-5 text-dark-400"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-  </svg>
-);
-
-const DownloadIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
-    />
-  </svg>
-);
-
-const FilterIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z"
-    />
-  </svg>
-);
-
-const ChevronDownIcon = ({ className }: { className?: string }) => (
-  <svg
-    className={className || 'h-4 w-4'}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-  </svg>
-);
-
-const RefreshIcon = ({ className }: { className?: string }) => (
-  <svg
-    className={className || 'h-4 w-4'}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"
-    />
-  </svg>
-);
-
-const SearchIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
-    />
-  </svg>
-);
+import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton';
+import {
+  BackIcon,
+  ChevronDownIcon,
+  DownloadIcon,
+  FilterIcon,
+  RefreshIcon,
+  SearchIcon,
+} from '@/components/icons';
 
 // === Constants ===
 
@@ -84,6 +23,7 @@ const RESOURCE_TYPES = [
   'users',
   'tickets',
   'stats',
+  'sales_stats',
   'broadcasts',
   'tariffs',
   'promocodes',
@@ -106,6 +46,7 @@ const RESOURCE_TYPES = [
   'apps',
   'email_templates',
   'pinned_messages',
+  'landings',
   'updates',
 ] as const;
 
@@ -116,6 +57,7 @@ const PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
 const AUTO_REFRESH_INTERVAL = 30_000;
 
 interface FiltersState {
+  userId: string;
   action: string;
   resource: string;
   status: string;
@@ -124,6 +66,7 @@ interface FiltersState {
 }
 
 const INITIAL_FILTERS: FiltersState = {
+  userId: '',
   action: '',
   resource: '',
   status: '',
@@ -133,17 +76,14 @@ const INITIAL_FILTERS: FiltersState = {
 
 // === Utility functions ===
 
-function translateAction(
-  action: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  t: any,
-): string {
+function translateAction(action: string, t: TFunction): string {
   return action
     .split(',')
     .map((perm: string) => {
       const trimmed = perm.trim();
       const [section, act] = trimmed.split(':', 2);
-      if (!section || !act) return trimmed;
+      // Действия без раздела (phantom_claimed…) — своими словами, если перевод есть.
+      if (!section || !act) return t(`admin.auditLog.actions.${trimmed}`, trimmed) as string;
       const sectionLabel = t(`admin.roles.form.permissionSections.${section}`, section) as string;
       const actionLabel = t(`admin.roles.form.permissionActions.${act}`, act) as string;
       return `${sectionLabel}: ${actionLabel}`;
@@ -184,9 +124,9 @@ interface StatusBadgeProps {
 
 function StatusBadge({ status, label }: StatusBadgeProps) {
   const colorMap: Record<string, string> = {
-    success: 'bg-green-500/20 text-green-400',
-    denied: 'bg-red-500/20 text-red-400',
-    error: 'bg-amber-500/20 text-amber-400',
+    success: 'bg-success-500/20 text-success-400',
+    denied: 'bg-error-500/20 text-error-400',
+    error: 'bg-warning-500/20 text-warning-400',
   };
 
   return (
@@ -204,11 +144,11 @@ interface MethodBadgeProps {
 
 function MethodBadge({ method }: MethodBadgeProps) {
   const colorMap: Record<string, string> = {
-    GET: 'bg-blue-500/20 text-blue-400',
-    POST: 'bg-green-500/20 text-green-400',
-    PUT: 'bg-amber-500/20 text-amber-400',
-    PATCH: 'bg-amber-500/20 text-amber-400',
-    DELETE: 'bg-red-500/20 text-red-400',
+    GET: 'bg-accent-500/20 text-accent-400',
+    POST: 'bg-success-500/20 text-success-400',
+    PUT: 'bg-warning-500/20 text-warning-400',
+    PATCH: 'bg-warning-500/20 text-warning-400',
+    DELETE: 'bg-error-500/20 text-error-400',
   };
 
   return (
@@ -431,9 +371,6 @@ export default function AdminAuditLog() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
-  // Auto-refresh interval ref
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   // Build query params
   const queryParams = useMemo((): AuditLogFilters => {
     const params: AuditLogFilters = {
@@ -441,6 +378,10 @@ export default function AdminAuditLog() {
       offset: page * pageSize,
     };
 
+    const parsedUserId = parseInt(appliedFilters.userId, 10);
+    if (!isNaN(parsedUserId) && parsedUserId > 0) {
+      params.user_id = parsedUserId;
+    }
     if (appliedFilters.action.trim()) {
       params.action = appliedFilters.action.trim();
     }
@@ -467,21 +408,12 @@ export default function AdminAuditLog() {
     refetchInterval: autoRefresh ? AUTO_REFRESH_INTERVAL : false,
   });
 
-  // Auto-refresh visual indicator
-  useEffect(() => {
-    if (autoRefresh) {
-      intervalRef.current = setInterval(() => {
-        // The visual indicator updates are driven by isFetching from react-query
-      }, AUTO_REFRESH_INTERVAL);
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [autoRefresh]);
+  // RBAC users for filter chips
+  const { data: rbacUsers } = useQuery({
+    queryKey: ['rbac-users'],
+    queryFn: () => rbacApi.getRbacUsers(),
+    staleTime: 5 * 60 * 1000,
+  });
 
   const entries = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -517,8 +449,11 @@ export default function AdminAuditLog() {
     setExporting(true);
     try {
       const exportParams: AuditLogFilters = {};
+      const exportUserId = parseInt(appliedFilters.userId, 10);
+      if (!isNaN(exportUserId) && exportUserId > 0) exportParams.user_id = exportUserId;
       if (appliedFilters.action.trim()) exportParams.action = appliedFilters.action.trim();
       if (appliedFilters.resource) exportParams.resource_type = appliedFilters.resource;
+      if (appliedFilters.status) exportParams.status = appliedFilters.status;
       if (appliedFilters.dateFrom) exportParams.date_from = appliedFilters.dateFrom;
       if (appliedFilters.dateTo) exportParams.date_to = appliedFilters.dateTo;
 
@@ -548,6 +483,7 @@ export default function AdminAuditLog() {
 
   const hasActiveFilters = useMemo(() => {
     return (
+      appliedFilters.userId.trim() !== '' ||
       appliedFilters.action.trim() !== '' ||
       appliedFilters.resource !== '' ||
       appliedFilters.status !== '' ||
@@ -564,7 +500,7 @@ export default function AdminAuditLog() {
           {!capabilities.hasBackButton && (
             <button
               onClick={() => navigate('/admin')}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
               aria-label={t('admin.auditLog.back')}
             >
               <BackIcon />
@@ -576,7 +512,7 @@ export default function AdminAuditLog() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Auto-refresh toggle */}
           <button
             onClick={() => setAutoRefresh((prev) => !prev)}
@@ -588,7 +524,8 @@ export default function AdminAuditLog() {
             title={t('admin.auditLog.autoRefresh.tooltip')}
           >
             <RefreshIcon className={`h-4 w-4 ${isFetching && autoRefresh ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">{t('admin.auditLog.autoRefresh.label')}</span>
+            {/* Подпись и на телефоне: без неё рядом стояли две одинаковые иконки обновления. */}
+            <span>{t('admin.auditLog.autoRefresh.label')}</span>
           </button>
 
           {/* Manual refresh */}
@@ -611,7 +548,7 @@ export default function AdminAuditLog() {
                   handleExport();
                 }}
                 disabled={exporting}
-                className="flex items-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-white transition-colors hover:bg-accent-600 disabled:opacity-50"
+                className="flex items-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-on-accent transition-colors hover:bg-accent-600 disabled:opacity-50"
               >
                 <DownloadIcon />
                 <span className="hidden sm:inline">
@@ -649,6 +586,51 @@ export default function AdminAuditLog() {
         {filtersOpen && (
           <div className="border-t border-dark-700 p-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {/* User filter */}
+              {rbacUsers && rbacUsers.length > 0 && (
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <label className="mb-1 block text-sm font-medium text-dark-300">
+                    {t('admin.auditLog.filters.user')}
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {rbacUsers.map((ru) => {
+                      const isSelected = filters.userId === String(ru.user_id);
+                      const displayName =
+                        ru.first_name || ru.email || ru.username || `#${ru.user_id}`;
+                      return (
+                        <button
+                          key={ru.user_id}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() =>
+                            setFilters((prev) => ({
+                              ...prev,
+                              userId: isSelected ? '' : String(ru.user_id),
+                            }))
+                          }
+                          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-1 focus-visible:ring-offset-dark-900 ${
+                            isSelected
+                              ? 'border-accent-500 bg-accent-500/20 text-accent-300'
+                              : 'border-dark-600 bg-dark-900 text-dark-300 hover:border-dark-500 hover:text-dark-200'
+                          }`}
+                        >
+                          <span
+                            className={`flex h-4 w-4 items-center justify-center rounded border text-xs ${
+                              isSelected
+                                ? 'border-accent-500 bg-accent-500 text-on-accent'
+                                : 'border-dark-500 bg-dark-800'
+                            }`}
+                          >
+                            {isSelected && '✓'}
+                          </span>
+                          <span>{displayName}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Action search */}
               <div>
                 <label
@@ -726,12 +708,11 @@ export default function AdminAuditLog() {
                 >
                   {t('admin.auditLog.filters.dateFrom')}
                 </label>
-                <input
-                  id="filter-date-from"
-                  type="date"
+                <DateField
                   value={filters.dateFrom}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
-                  className="w-full rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-dark-100 outline-none transition-colors focus:border-accent-500"
+                  max={filters.dateTo}
+                  onChange={(v) => setFilters((prev) => ({ ...prev, dateFrom: v }))}
+                  className="flex w-full items-center gap-2 rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-dark-100 transition-colors hover:border-accent-500"
                 />
               </div>
 
@@ -743,12 +724,11 @@ export default function AdminAuditLog() {
                 >
                   {t('admin.auditLog.filters.dateTo')}
                 </label>
-                <input
-                  id="filter-date-to"
-                  type="date"
+                <DateField
                   value={filters.dateTo}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
-                  className="w-full rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-dark-100 outline-none transition-colors focus:border-accent-500"
+                  min={filters.dateFrom}
+                  onChange={(v) => setFilters((prev) => ({ ...prev, dateTo: v }))}
+                  className="flex w-full items-center gap-2 rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-dark-100 transition-colors hover:border-accent-500"
                 />
               </div>
             </div>
@@ -757,7 +737,7 @@ export default function AdminAuditLog() {
             <div className="mt-4 flex items-center gap-3">
               <button
                 onClick={handleApplyFilters}
-                className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-600"
+                className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-on-accent transition-colors hover:bg-accent-600"
               >
                 {t('admin.auditLog.filters.apply')}
               </button>
@@ -800,9 +780,9 @@ export default function AdminAuditLog() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-        </div>
+        <SkeletonGroup className="space-y-3">
+          <Skeleton variant="card" count={3} className="h-16" />
+        </SkeletonGroup>
       ) : error ? (
         <div className="py-12 text-center">
           <p className="text-error-400">{t('admin.auditLog.errors.loadFailed')}</p>

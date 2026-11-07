@@ -11,9 +11,7 @@ const cardVariants = cva(
     'relative overflow-hidden',
     'border border-dark-700/40 bg-dark-900/70',
     'rounded-[var(--bento-radius)]',
-    'transition-all duration-200',
-    // GPU acceleration
-    'transform-gpu',
+    'transition-[border-color,background-color,box-shadow,transform,opacity] duration-200',
     // Glass border inset
     'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]',
   ],
@@ -54,7 +52,8 @@ const cardVariants = cva(
 );
 
 export interface CardProps
-  extends Omit<HTMLMotionProps<'div'>, 'children'>, VariantProps<typeof cardVariants> {
+  extends Omit<HTMLMotionProps<'div'>, 'children'>,
+    VariantProps<typeof cardVariants> {
   children: ReactNode;
   asChild?: boolean;
   haptic?: boolean;

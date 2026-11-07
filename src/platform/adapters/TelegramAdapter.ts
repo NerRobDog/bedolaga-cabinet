@@ -11,6 +11,7 @@ import {
   showPopup,
   setMiniAppHeaderColor,
   setMiniAppBottomBarColor,
+  setMiniAppBackgroundColor,
   themeParamsState,
   getCloudStorageItem,
   setCloudStorageItem,
@@ -22,6 +23,8 @@ import {
   shareURL,
   enableClosingConfirmation,
   disableClosingConfirmation,
+  hideKeyboard,
+  downloadFile,
 } from '@telegram-apps/sdk-react';
 import type {
   PlatformContext,
@@ -73,18 +76,14 @@ function createBackButtonController(): BackButtonController {
       if (currentCallback) {
         try {
           offBackButtonClick(currentCallback);
-        } catch {
-          // ignore
-        }
+        } catch {}
       }
 
       currentCallback = onClick;
       try {
         onBackButtonClick(onClick);
         showBackButton();
-      } catch {
-        // Back button not mounted
-      }
+      } catch {}
     },
 
     hide() {
@@ -93,16 +92,12 @@ function createBackButtonController(): BackButtonController {
       if (currentCallback) {
         try {
           offBackButtonClick(currentCallback);
-        } catch {
-          // ignore
-        }
+        } catch {}
         currentCallback = null;
       }
       try {
         hideBackButton();
-      } catch {
-        // Back button not mounted
-      }
+      } catch {}
     },
   };
 }
@@ -115,27 +110,21 @@ function createHapticController(): HapticController {
       if (!inTelegram) return;
       try {
         hapticFeedbackImpactOccurred(style);
-      } catch {
-        // Haptic not available
-      }
+      } catch {}
     },
 
     notification(type: HapticNotificationType) {
       if (!inTelegram) return;
       try {
         hapticFeedbackNotificationOccurred(type);
-      } catch {
-        // Haptic not available
-      }
+      } catch {}
     },
 
     selection() {
       if (!inTelegram) return;
       try {
         hapticFeedbackSelectionChanged();
-      } catch {
-        // Haptic not available
-      }
+      } catch {}
     },
   };
 }
@@ -183,8 +172,6 @@ function createDialogController(): DialogController {
       }
       try {
         const buttons = options.buttons?.map((btn) => {
-          // For 'ok', 'close', 'cancel' types: do NOT include text
-          // For 'default', 'destructive' types: text is required
           if (btn.type === 'ok' || btn.type === 'close' || btn.type === 'cancel') {
             return { type: btn.type, id: btn.id };
           }
@@ -212,18 +199,21 @@ function createThemeController(): ThemeController {
       if (!inTelegram) return;
       try {
         setMiniAppHeaderColor(color as `#${string}`);
-      } catch {
-        // Not supported
-      }
+      } catch {}
     },
 
     setBottomBarColor(color: string) {
       if (!inTelegram) return;
       try {
         setMiniAppBottomBarColor(color as `#${string}`);
-      } catch {
-        // Not supported
-      }
+      } catch {}
+    },
+
+    setBackgroundColor(color: string) {
+      if (!inTelegram) return;
+      try {
+        setMiniAppBackgroundColor(color as `#${string}`);
+      } catch {}
     },
 
     getThemeParams() {
@@ -231,7 +221,6 @@ function createThemeController(): ThemeController {
       try {
         const params = themeParamsState();
         if (!params) return null;
-        // SDK v3 uses camelCase — convert to snake_case for our interface
         return {
           bg_color: params.bgColor,
           text_color: params.textColor,
@@ -330,9 +319,7 @@ export function createTelegramAdapter(): PlatformContext {
         try {
           await navigator.share({ text: shareText, url });
           return true;
-        } catch {
-          // User cancelled or share failed
-        }
+        } catch {}
       }
 
       try {
@@ -350,8 +337,23 @@ export function createTelegramAdapter(): PlatformContext {
         } else {
           disableClosingConfirmation();
         }
+      } catch {}
+    },
+
+    async downloadFile(url: string, fileName: string) {
+      if (downloadFile.isAvailable()) {
+        await downloadFile(url, fileName);
+        return;
+      }
+      // Клиент старше Bot API 8.0: ссылка уходит во внешний браузер, файл придёт вложением.
+      openLink(url);
+    },
+
+    hideKeyboard() {
+      try {
+        if (hideKeyboard.isAvailable()) hideKeyboard();
       } catch {
-        // Not supported
+        // Старый клиент: клавиатуру закрывает потеря фокуса полем.
       }
     },
   };

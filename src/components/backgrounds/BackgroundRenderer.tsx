@@ -1,63 +1,89 @@
 import { Suspense, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { brandingApi } from '@/api/branding';
 import type { AnimationConfig, BackgroundType } from '@/components/ui/backgrounds/types';
 import { DEFAULT_ANIMATION_CONFIG } from '@/components/ui/backgrounds/types';
 import { backgroundComponents, prefetchBackground } from '@/components/ui/backgrounds/registry';
-
-const ANIMATION_CACHE_KEY = 'cabinet_animation_config';
-
-function getCachedConfig(): AnimationConfig | null {
-  try {
-    const cached = localStorage.getItem(ANIMATION_CACHE_KEY);
-    return cached ? JSON.parse(cached) : null;
-  } catch {
-    return null;
-  }
-}
+import { validateConfig, getCachedConfig, setCachedConfig } from '@/utils/backgroundConfig';
 
 // Prefetch the background JS chunk immediately based on localStorage cache.
-// This starts the download before React even renders, so by the time
-// Suspense needs the component, the chunk is already loaded.
 const cachedConfig = getCachedConfig();
 if (cachedConfig?.enabled && cachedConfig.type && cachedConfig.type !== 'none') {
   prefetchBackground(cachedConfig.type);
 }
 
-function setCachedConfig(config: AnimationConfig) {
-  try {
-    localStorage.setItem(ANIMATION_CACHE_KEY, JSON.stringify(config));
-  } catch {
-    // localStorage not available
-  }
-}
-
-export function setCachedAnimationConfig(config: AnimationConfig) {
-  setCachedConfig(config);
-}
-
 function reduceMobileSettings(settings: Record<string, unknown>): Record<string, unknown> {
   const reduced = { ...settings };
+  // 75% reduction (divide by 4) instead of 50% — much less GPU work
   if (typeof reduced.particleCount === 'number')
-    reduced.particleCount = Math.floor((reduced.particleCount as number) / 2);
+    reduced.particleCount = Math.max(20, Math.floor(reduced.particleCount / 4));
   if (typeof reduced.particleDensity === 'number')
-    reduced.particleDensity = Math.floor((reduced.particleDensity as number) / 2);
+    reduced.particleDensity = Math.max(50, Math.floor(reduced.particleDensity / 4));
+  if (typeof reduced.density === 'number')
+    reduced.density = Math.max(20, Math.floor(reduced.density / 2));
+  if (typeof reduced.starCount === 'number')
+    reduced.starCount = Math.max(50, Math.floor(reduced.starCount / 4));
   if (typeof reduced.number === 'number')
-    reduced.number = Math.floor((reduced.number as number) / 2);
+    reduced.number = Math.max(5, Math.floor(reduced.number / 4));
   if ('interactive' in reduced) reduced.interactive = false;
+  if (typeof reduced.lineCount === 'number')
+    reduced.lineCount = Math.max(5, Math.floor(reduced.lineCount / 2));
+  if (typeof reduced.rippleCount === 'number')
+    reduced.rippleCount = Math.max(2, Math.floor(reduced.rippleCount / 2));
+  if (typeof reduced.count === 'number') reduced.count = Math.max(3, Math.floor(reduced.count / 2));
+  if (typeof reduced.rows === 'number') reduced.rows = Math.max(4, Math.floor(reduced.rows * 0.6));
+  if (typeof reduced.cols === 'number') reduced.cols = Math.max(4, Math.floor(reduced.cols * 0.6));
   return reduced;
 }
 
-export function BackgroundRenderer() {
+function RenderBackground({ config }: { config: AnimationConfig }) {
   const prefersReducedMotion = useMemo(
     () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     [],
   );
 
+  if (!config.enabled || config.type === 'none' || prefersReducedMotion) {
+    return null;
+  }
+
+  const bgType = config.type as Exclude<BackgroundType, 'none'>;
+  const Component = backgroundComponents[bgType];
+
+  if (!Component) return null;
+
+  const isMobile = window.innerWidth < 768;
+  const settings =
+    config.reducedOnMobile && isMobile ? reduceMobileSettings(config.settings) : config.settings;
+
+  // On mobile, cap blur to 4px max — full blur is extremely GPU-heavy
+  const effectiveBlur = isMobile ? Math.min(config.blur, 4) : config.blur;
+
+  return createPortal(
+    <div
+      className="pointer-events-none fixed inset-0"
+      style={{
+        zIndex: -2,
+        opacity: config.opacity,
+        filter: effectiveBlur > 0 ? `blur(${effectiveBlur}px)` : undefined,
+        contain: 'strict',
+        backfaceVisibility: 'hidden',
+      }}
+    >
+      <Suspense fallback={null}>
+        <Component settings={settings} />
+      </Suspense>
+    </div>,
+    document.body,
+  );
+}
+
+export function BackgroundRenderer() {
   const { data: config } = useQuery({
     queryKey: ['animation-config'],
     queryFn: async () => {
-      const result = await brandingApi.getAnimationConfig();
+      const raw = await brandingApi.getAnimationConfig();
+      const result = validateConfig(raw) ?? DEFAULT_ANIMATION_CONFIG;
       setCachedConfig(result);
       return result;
     },
@@ -67,34 +93,11 @@ export function BackgroundRenderer() {
   });
 
   const effectiveConfig = config ?? DEFAULT_ANIMATION_CONFIG;
+  return <RenderBackground config={effectiveConfig} />;
+}
 
-  if (!effectiveConfig.enabled || effectiveConfig.type === 'none' || prefersReducedMotion) {
-    return null;
-  }
-
-  const bgType = effectiveConfig.type as Exclude<BackgroundType, 'none'>;
-  const Component = backgroundComponents[bgType];
-
-  if (!Component) return null;
-
-  const isMobile = window.innerWidth < 768;
-  const settings =
-    effectiveConfig.reducedOnMobile && isMobile
-      ? reduceMobileSettings(effectiveConfig.settings)
-      : effectiveConfig.settings;
-
-  return (
-    <div
-      className="pointer-events-none fixed inset-0 z-0"
-      style={{
-        opacity: effectiveConfig.opacity,
-        filter: effectiveConfig.blur > 0 ? `blur(${effectiveConfig.blur}px)` : undefined,
-        contain: 'strict',
-      }}
-    >
-      <Suspense fallback={null}>
-        <Component settings={settings} />
-      </Suspense>
-    </div>
-  );
+export function StaticBackgroundRenderer({ config }: { config: AnimationConfig }) {
+  const validated = useMemo(() => validateConfig(config), [config]);
+  if (!validated) return null;
+  return <RenderBackground config={validated} />;
 }

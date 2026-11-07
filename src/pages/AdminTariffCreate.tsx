@@ -4,83 +4,27 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   tariffsApi,
-  TariffDetail,
-  TariffCreateRequest,
-  TariffUpdateRequest,
-  PeriodPrice,
-  ServerInfo,
+  type TariffDetail,
+  type TariffCreateRequest,
+  type TariffUpdateRequest,
+  type PeriodPrice,
+  type ServerInfo,
+  type ExternalSquadInfo,
 } from '../api/tariffs';
 import { AdminBackButton } from '../components/admin';
 import { createNumberInputHandler, toNumber } from '../utils/inputHelpers';
-
-// Icons
-const PlusIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-  </svg>
-);
-
-const TrashIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-    />
-  </svg>
-);
-
-const CheckIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-  </svg>
-);
-
-const InfinityIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M16.5 12a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zm0 0c0 1.657 1.007 3 2.25 3S21 13.657 21 12a9 9 0 10-2.636 6.364M16.5 12V8.25"
-    />
-  </svg>
-);
-
-const CalendarIcon = () => (
-  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"
-    />
-  </svg>
-);
-
-const SunIcon = () => (
-  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"
-    />
-  </svg>
-);
-
-const RefreshIcon = () => (
-  <svg
-    className="h-4 w-4 animate-spin"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-    />
-  </svg>
-);
+import Twemoji from '@/lib/twemoji';
+import { PageSkeleton, Skeleton } from '@/components/ui/skeleton';
+import {
+  CalendarIcon,
+  CheckIcon,
+  InfinityIcon,
+  PlusIcon,
+  RefreshIcon,
+  SunIcon,
+  StarIcon,
+  TrashIcon,
+} from '@/components/icons';
 
 type TariffType = 'period' | 'daily' | null;
 
@@ -104,9 +48,18 @@ export default function AdminTariffCreate() {
   const [maxDeviceLimit, setMaxDeviceLimit] = useState<number | ''>(0);
   const [tierLevel, setTierLevel] = useState<number | ''>(1);
   const [periodPrices, setPeriodPrices] = useState<PeriodPrice[]>([]);
+  // Период, отмеченный как самый выгодный. Хранится днями: набор периодов правят
+  // прямо на этой форме, и индекс после правки указывал бы на другой период.
+  const [highlightPeriodDays, setHighlightPeriodDays] = useState<number | null>(null);
   const [selectedSquads, setSelectedSquads] = useState<string[]>([]);
+  const [selectedExternalSquad, setSelectedExternalSquad] = useState<string | null>(null);
   const [selectedPromoGroups, setSelectedPromoGroups] = useState<number[]>([]);
   const [dailyPriceKopeks, setDailyPriceKopeks] = useState<number | ''>(0);
+  const [lavaProductId, setLavaProductId] = useState('');
+  // Тег панели Remnawave: сервер поднимает регистр и проверяет формат
+  const [panelTag, setPanelTag] = useState('');
+  // Дни триала на этом тарифе; '' — глобальная настройка
+  const [trialDurationDays, setTrialDurationDays] = useState<number | ''>('');
 
   // Traffic topup
   const [trafficTopupEnabled, setTrafficTopupEnabled] = useState(false);
@@ -123,6 +76,11 @@ export default function AdminTariffCreate() {
   // Traffic reset mode
   const [trafficResetMode, setTrafficResetMode] = useState<string | null>(null);
 
+  // Gift visibility
+  const [showInGift, setShowInGift] = useState(true);
+  // Тариф отмечен как выгодный — выделяется в списке тарифов у клиента.
+  const [isTariffHighlighted, setIsTariffHighlighted] = useState(false);
+
   // New period for adding
   const [newPeriodDays, setNewPeriodDays] = useState<number | ''>(30);
   const [newPeriodPrice, setNewPeriodPrice] = useState<number | ''>(300);
@@ -136,6 +94,12 @@ export default function AdminTariffCreate() {
   const { data: servers = [] } = useQuery({
     queryKey: ['admin-tariffs-servers'],
     queryFn: () => tariffsApi.getAvailableServers(),
+  });
+
+  // Fetch external squads
+  const { data: externalSquads = [] } = useQuery({
+    queryKey: ['admin-tariffs-external-squads'],
+    queryFn: () => tariffsApi.getAvailableExternalSquads(),
   });
 
   // Fetch promo groups
@@ -164,15 +128,22 @@ export default function AdminTariffCreate() {
       setMaxDeviceLimit(data.max_device_limit || 0);
       setTierLevel(data.tier_level || 1);
       setPeriodPrices(data.period_prices?.length ? data.period_prices : []);
+      setHighlightPeriodDays(data.highlight_period_days ?? null);
       setSelectedSquads(data.allowed_squads || []);
+      setSelectedExternalSquad(data.external_squad_uuid || null);
       setSelectedPromoGroups(
         data.promo_groups?.filter((pg) => pg.is_selected).map((pg) => pg.id) || [],
       );
       setDailyPriceKopeks(data.daily_price_kopeks || 0);
+      setLavaProductId(data.lava_product_id || '');
+      setPanelTag(data.panel_tag || '');
+      setTrialDurationDays(data.trial_duration_days ?? '');
       setTrafficTopupEnabled(data.traffic_topup_enabled || false);
       setMaxTopupTrafficGb(data.max_topup_traffic_gb || 0);
       setTrafficTopupPackages(data.traffic_topup_packages || {});
       setTrafficResetMode(data.traffic_reset_mode || null);
+      setShowInGift(data.show_in_gift ?? true);
+      setIsTariffHighlighted(data.is_highlighted ?? false);
       return data;
     }, []),
   });
@@ -198,25 +169,42 @@ export default function AdminTariffCreate() {
 
   const handleSubmit = () => {
     const isDaily = tariffType === 'daily';
+    const highlightPayload = isDaily ? null : highlightPeriodDays;
 
+    // PATCH applies a field only when it is present in the payload, so empty
+    // values ('' / []) must still be sent when editing — omitting them makes
+    // clearing the description or unchecking all promo groups impossible.
     const data: TariffCreateRequest | TariffUpdateRequest = {
       name,
-      description: description || undefined,
+      description: isEdit ? description : description || undefined,
       is_active: isActive,
+      show_in_gift: showInGift,
+      is_highlighted: isTariffHighlighted,
       traffic_limit_gb: toNumber(trafficLimitGb, 100),
       device_limit: toNumber(deviceLimit, 1),
       device_price_kopeks:
-        toNumber(devicePriceKopeks) > 0 ? toNumber(devicePriceKopeks) : undefined,
+        toNumber(devicePriceKopeks) >= 0 ? toNumber(devicePriceKopeks) : undefined,
       max_device_limit: toNumber(maxDeviceLimit) > 0 ? toNumber(maxDeviceLimit) : undefined,
       tier_level: toNumber(tierLevel, 1),
       period_prices: isDaily ? [] : periodPrices.filter((p) => p.price_kopeks >= 0),
+      // Выделение необязательно. На правке 0 — «снять выделение» (пустое поле
+      // означало бы «не трогать»); на создании снимать нечего, и без отметки
+      // поле не уходит — сервер отверг бы ноль.
+      highlight_period_days: isEdit ? (highlightPayload ?? 0) : (highlightPayload ?? undefined),
       allowed_squads: selectedSquads,
-      promo_group_ids: selectedPromoGroups.length > 0 ? selectedPromoGroups : undefined,
+      external_squad_uuid: selectedExternalSquad || null,
+      promo_group_ids: selectedPromoGroups,
       traffic_topup_enabled: trafficTopupEnabled,
       traffic_topup_packages: trafficTopupPackages,
       max_topup_traffic_gb: toNumber(maxTopupTrafficGb),
       is_daily: isDaily,
       daily_price_kopeks: isDaily ? toNumber(dailyPriceKopeks) : 0,
+      // Пустая строка отвязывает тариф от продукта Lava
+      lava_product_id: lavaProductId.trim(),
+      // Пустая строка снимает тег панели (на правке); формат проверяет сервер
+      panel_tag: panelTag.trim(),
+      // Дни триала: пусто — глобальная настройка
+      trial_duration_days: toNumber(trialDurationDays) > 0 ? toNumber(trialDurationDays) : null,
       traffic_reset_mode: trafficResetMode,
     };
 
@@ -242,7 +230,10 @@ export default function AdminTariffCreate() {
   const addPeriod = () => {
     const days = toNumber(newPeriodDays, 0);
     const price = toNumber(newPeriodPrice, 0);
-    if (days > 0 && price > 0) {
+    // Нулевая цена допустима: бесплатный тариф — штатная настройка, и бот с
+    // кабинетом такой период продают. Раньше кнопка на нуле молча ничего
+    // не делала, а поле ввода само подменяло ноль единицей.
+    if (days > 0 && price >= 0) {
       const exists = periodPrices.some((p) => p.days === days);
       if (!exists) {
         setPeriodPrices((prev) =>
@@ -256,6 +247,13 @@ export default function AdminTariffCreate() {
 
   const removePeriod = (days: number) => {
     setPeriodPrices((prev) => prev.filter((p) => p.days !== days));
+    // Удалённый период не может оставаться выделенным.
+    setHighlightPeriodDays((current) => (current === days ? null : current));
+  };
+
+  /** Повторное нажатие снимает выделение — отдельной кнопки «снять» не нужно. */
+  const toggleHighlight = (days: number) => {
+    setHighlightPeriodDays((current) => (current === days ? null : days));
   };
 
   const updatePeriodPrice = (days: number, priceRubles: number) => {
@@ -311,9 +309,12 @@ export default function AdminTariffCreate() {
   // Loading state
   if (isEdit && isLoadingTariff) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-      </div>
+      <PageSkeleton variant="admin" leading={1} titleWidth="w-56" className="space-y-6">
+        <div className="flex gap-2">
+          <Skeleton count={4} className="h-10 w-28 shrink-0 rounded-xl" />
+        </div>
+        <Skeleton variant="card" className="h-96" />
+      </PageSkeleton>
     );
   }
 
@@ -336,7 +337,7 @@ export default function AdminTariffCreate() {
           >
             <div className="flex items-center gap-4">
               <div className="rounded-lg bg-accent-500/20 p-3 text-accent-400 group-hover:bg-accent-500/30">
-                <CalendarIcon />
+                <CalendarIcon className="h-6 w-6" />
               </div>
               <div>
                 <h3 className="font-medium text-dark-100">{t('admin.tariffs.periodTariff')}</h3>
@@ -350,7 +351,7 @@ export default function AdminTariffCreate() {
           >
             <div className="flex items-center gap-4">
               <div className="rounded-lg bg-warning-500/20 p-3 text-warning-400 group-hover:bg-warning-500/30">
-                <SunIcon />
+                <SunIcon className="h-6 w-6" />
               </div>
               <div>
                 <h3 className="font-medium text-dark-100">{t('admin.tariffs.dailyTariff')}</h3>
@@ -376,7 +377,7 @@ export default function AdminTariffCreate() {
               isDaily ? 'bg-warning-500/20 text-warning-400' : 'bg-accent-500/20 text-accent-400'
             }`}
           >
-            {isDaily ? <SunIcon /> : <CalendarIcon />}
+            {isDaily ? <SunIcon className="h-6 w-6" /> : <CalendarIcon className="h-6 w-6" />}
           </div>
           <div>
             <h1 className="text-xl font-bold text-dark-100">
@@ -426,11 +427,12 @@ export default function AdminTariffCreate() {
         <div className="card space-y-4">
           {/* Name */}
           <div>
-            <label className="mb-2 block text-sm font-medium text-dark-300">
+            <label htmlFor="tariff-name" className="mb-2 block text-sm font-medium text-dark-300">
               {t('admin.tariffs.nameLabel')}
               <span className="text-error-400">*</span>
             </label>
             <input
+              id="tariff-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -450,10 +452,14 @@ export default function AdminTariffCreate() {
 
           {/* Description */}
           <div>
-            <label className="mb-2 block text-sm font-medium text-dark-300">
+            <label
+              htmlFor="tariff-description"
+              className="mb-2 block text-sm font-medium text-dark-300"
+            >
               {t('admin.tariffs.descriptionLabel')}
             </label>
             <textarea
+              id="tariff-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="input min-h-[80px] resize-none"
@@ -464,12 +470,16 @@ export default function AdminTariffCreate() {
           {/* Daily Price (only for daily tariff) */}
           {isDaily && (
             <div className="rounded-lg border border-warning-500/30 bg-warning-500/10 p-4">
-              <label className="mb-2 block text-sm font-medium text-warning-400">
+              <label
+                htmlFor="tariff-daily-price"
+                className="mb-2 block text-sm font-medium text-warning-400"
+              >
                 {t('admin.tariffs.dailyPriceLabel')}
                 <span className="text-error-400">*</span>
               </label>
               <div className="flex items-center gap-2">
                 <input
+                  id="tariff-daily-price"
                   type="number"
                   value={dailyPriceKopeks === '' ? '' : dailyPriceKopeks / 100}
                   onChange={(e) => {
@@ -492,13 +502,77 @@ export default function AdminTariffCreate() {
             </div>
           )}
 
+          {/* Lava recurrent product */}
+          <div>
+            <label
+              htmlFor="tariff-lava-product"
+              className="mb-2 block text-sm font-medium text-dark-300"
+            >
+              {t('admin.tariffs.lavaProductLabel')}
+            </label>
+            <input
+              id="tariff-lava-product"
+              type="text"
+              value={lavaProductId}
+              onChange={(e) => setLavaProductId(e.target.value)}
+              className="input w-full"
+              placeholder="6be21df9-0bcd-44ac-9c2c-3be7bc94decc"
+            />
+            <p className="mt-2 text-xs text-dark-500">{t('admin.tariffs.lavaProductDesc')}</p>
+          </div>
+
+          {/* Remnawave panel tag */}
+          <div>
+            <label
+              htmlFor="tariff-panel-tag"
+              className="mb-2 block text-sm font-medium text-dark-300"
+            >
+              {t('admin.tariffs.panelTagLabel')}
+            </label>
+            <input
+              id="tariff-panel-tag"
+              type="text"
+              value={panelTag}
+              onChange={(e) => setPanelTag(e.target.value)}
+              className="input w-full uppercase"
+              maxLength={16}
+              placeholder="PAID_PRO"
+            />
+            <p className="mt-2 text-xs text-dark-500">{t('admin.tariffs.panelTagDesc')}</p>
+          </div>
+
+          {/* Trial days on this tariff */}
+          <div>
+            <label
+              htmlFor="tariff-trial-days"
+              className="mb-2 block text-sm font-medium text-dark-300"
+            >
+              {t('admin.tariffs.trialDaysLabel')}
+            </label>
+            <input
+              id="tariff-trial-days"
+              type="number"
+              min={1}
+              value={trialDurationDays}
+              onChange={(e) =>
+                setTrialDurationDays(e.target.value === '' ? '' : Number(e.target.value))
+              }
+              className="input w-full"
+            />
+            <p className="mt-2 text-xs text-dark-500">{t('admin.tariffs.trialDaysDesc')}</p>
+          </div>
+
           {/* Traffic Limit */}
           <div>
-            <label className="mb-2 block text-sm font-medium text-dark-300">
+            <label
+              htmlFor="tariff-traffic-limit"
+              className="mb-2 block text-sm font-medium text-dark-300"
+            >
               {t('admin.tariffs.trafficLimitLabel')}
             </label>
             <div className="flex items-center gap-2">
               <input
+                id="tariff-traffic-limit"
                 type="number"
                 value={trafficLimitGb}
                 onChange={createNumberInputHandler(setTrafficLimitGb, 0)}
@@ -509,7 +583,7 @@ export default function AdminTariffCreate() {
               <span className="text-dark-400">{t('admin.tariffs.gbUnit')}</span>
               {(trafficLimitGb === 0 || trafficLimitGb === '') && (
                 <span className="flex items-center gap-1 text-sm text-success-500">
-                  <InfinityIcon />
+                  <InfinityIcon className="h-4 w-4" />
                   {t('admin.tariffs.unlimited')}
                 </span>
               )}
@@ -519,11 +593,15 @@ export default function AdminTariffCreate() {
 
           {/* Device Limit */}
           <div>
-            <label className="mb-2 block text-sm font-medium text-dark-300">
+            <label
+              htmlFor="tariff-device-limit"
+              className="mb-2 block text-sm font-medium text-dark-300"
+            >
               {t('admin.tariffs.deviceLimitLabel')}
               <span className="text-error-400">*</span>
             </label>
             <input
+              id="tariff-device-limit"
               type="number"
               value={deviceLimit}
               onChange={createNumberInputHandler(setDeviceLimit, 1)}
@@ -535,11 +613,15 @@ export default function AdminTariffCreate() {
 
           {/* Tier Level */}
           <div>
-            <label className="mb-2 block text-sm font-medium text-dark-300">
+            <label
+              htmlFor="tariff-tier-level"
+              className="mb-2 block text-sm font-medium text-dark-300"
+            >
               {t('admin.tariffs.tierLevelLabel')}
               <span className="text-error-400">*</span>
             </label>
             <input
+              id="tariff-tier-level"
               type="number"
               value={tierLevel}
               onChange={createNumberInputHandler(setTierLevel, 1, 10)}
@@ -579,10 +661,12 @@ export default function AdminTariffCreate() {
                 <label className="mb-1 block text-xs text-dark-500">
                   {t('admin.tariffs.priceLabel')}
                 </label>
+                {/* Минимум 0, а не 1: бесплатный тариф — штатная настройка,
+                    и набранный ноль не должен превращаться в рубль. */}
                 <input
                   type="number"
                   value={newPeriodPrice}
-                  onChange={createNumberInputHandler(setNewPeriodPrice, 1)}
+                  onChange={createNumberInputHandler(setNewPeriodPrice, 0)}
                   className="input w-28"
                   placeholder="300"
                 />
@@ -608,8 +692,10 @@ export default function AdminTariffCreate() {
                   key={period.days}
                   className="flex items-center gap-3 rounded-lg bg-dark-800 p-3"
                 >
-                  <div className="w-20 font-medium text-dark-300">
-                    {period.days} {t('admin.tariffs.daysShort')}
+                  <div className="w-16 shrink-0 whitespace-nowrap font-medium text-dark-300">
+                    {period.days}
+                    {'\u00A0'}
+                    {t('admin.tariffs.daysShort')}
                   </div>
                   <input
                     type="number"
@@ -623,7 +709,7 @@ export default function AdminTariffCreate() {
                       setEditingPeriodPrices((prev) => ({ ...prev, [period.days]: val }));
                       if (val !== '') {
                         const num = parseFloat(val);
-                        if (!isNaN(num)) {
+                        if (!Number.isNaN(num)) {
                           updatePeriodPrice(period.days, Math.max(0, num));
                         }
                       }
@@ -639,17 +725,30 @@ export default function AdminTariffCreate() {
                         return copy;
                       });
                     }}
-                    className="input w-28"
+                    className="input w-28 min-w-0"
                     step={1}
                     placeholder="0"
                   />
-                  <span className="text-dark-400">₽</span>
+                  <span className="shrink-0 text-dark-400">₽</span>
                   <div className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={() => toggleHighlight(period.days)}
+                    title={t('admin.tariffs.bestValueHint')}
+                    aria-pressed={highlightPeriodDays === period.days}
+                    className={`rounded-lg p-2 transition-colors ${
+                      highlightPeriodDays === period.days
+                        ? 'bg-urgent-400/20 text-urgent-400'
+                        : 'text-dark-400 hover:bg-dark-700 hover:text-dark-200'
+                    }`}
+                  >
+                    <StarIcon filled={highlightPeriodDays === period.days} className="h-4 w-4" />
+                  </button>
                   <button
                     onClick={() => removePeriod(period.days)}
                     className="rounded-lg p-2 text-dark-400 transition-colors hover:bg-error-500/20 hover:text-error-400"
                   >
-                    <TrashIcon />
+                    <TrashIcon className="h-4 w-4" />
                   </button>
                 </div>
               ))}
@@ -660,6 +759,83 @@ export default function AdminTariffCreate() {
 
       {activeTab === 'servers' && (
         <div className="space-y-4">
+          {/* External Squad */}
+          {externalSquads.length > 0 && (
+            <div className="card space-y-4">
+              <h4 className="text-sm font-medium text-dark-200">
+                {t('admin.tariffs.externalSquadTitle')}
+              </h4>
+              <p className="text-sm text-dark-400">{t('admin.tariffs.externalSquadHint')}</p>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedExternalSquad(null)}
+                  className={`flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors ${
+                    !selectedExternalSquad
+                      ? isDaily
+                        ? 'bg-warning-500/20 text-warning-300'
+                        : 'bg-accent-500/20 text-accent-300'
+                      : 'bg-dark-800 text-dark-300 hover:bg-dark-700'
+                  }`}
+                >
+                  <div
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
+                      !selectedExternalSquad
+                        ? isDaily
+                          ? 'bg-warning-500 text-white'
+                          : 'bg-accent-500 text-on-accent'
+                        : 'bg-dark-600'
+                    }`}
+                  >
+                    {!selectedExternalSquad && <CheckIcon />}
+                  </div>
+                  <span className="flex-1 text-sm font-medium">
+                    {t('admin.tariffs.noExternalSquad')}
+                  </span>
+                </button>
+                {externalSquads.map((squad: ExternalSquadInfo) => {
+                  const isSelected = selectedExternalSquad === squad.uuid;
+                  return (
+                    <button
+                      key={squad.uuid}
+                      type="button"
+                      onClick={() => setSelectedExternalSquad(squad.uuid)}
+                      className={`flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors ${
+                        isSelected
+                          ? isDaily
+                            ? 'bg-warning-500/20 text-warning-300'
+                            : 'bg-accent-500/20 text-accent-300'
+                          : 'bg-dark-800 text-dark-300 hover:bg-dark-700'
+                      }`}
+                    >
+                      <div
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
+                          isSelected
+                            ? isDaily
+                              ? 'bg-warning-500 text-white'
+                              : 'bg-accent-500 text-on-accent'
+                            : 'bg-dark-600'
+                        }`}
+                      >
+                        {isSelected && <CheckIcon />}
+                      </div>
+                      {/* Имя важнее счётчика: раньше «123456 пользователей» съедало
+                          строку, а имя сквада обрезалось до «Внешний …». */}
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="text-sm font-medium [overflow-wrap:anywhere]">
+                          {squad.name}
+                        </span>
+                        <span className="text-xs text-dark-500">
+                          {squad.members_count} {t('admin.tariffs.externalSquadUsers')}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Servers */}
           <div className="card space-y-4">
             <h4 className="text-sm font-medium text-dark-200">{t('admin.tariffs.serversTitle')}</h4>
@@ -686,17 +862,24 @@ export default function AdminTariffCreate() {
                       }`}
                     >
                       <div
-                        className={`flex h-5 w-5 items-center justify-center rounded ${
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded ${
                           isSelected
                             ? isDaily
                               ? 'bg-warning-500 text-white'
-                              : 'bg-accent-500 text-white'
+                              : 'bg-accent-500 text-on-accent'
                             : 'bg-dark-600'
                         }`}
                       >
                         {isSelected && <CheckIcon />}
                       </div>
-                      <span className="flex-1 text-sm font-medium">{server.display_name}</span>
+                      <span className="flex-1 text-sm font-medium">
+                        <Twemoji
+                          tag="span"
+                          options={{ className: 'twemoji', folder: 'svg', ext: '.svg' }}
+                        >
+                          {server.display_name}
+                        </Twemoji>
+                      </span>
                       {server.country_code && (
                         <span className="text-xs text-dark-500">{server.country_code}</span>
                       )}
@@ -764,6 +947,9 @@ export default function AdminTariffCreate() {
               <button
                 type="button"
                 onClick={() => setTrafficTopupEnabled(!trafficTopupEnabled)}
+                role="switch"
+                aria-checked={trafficTopupEnabled}
+                aria-label={t('admin.tariffs.extraTrafficTitle')}
                 className={`relative h-6 w-11 rounded-full transition-colors ${
                   trafficTopupEnabled ? 'bg-accent-500' : 'bg-dark-600'
                 }`}
@@ -826,7 +1012,7 @@ export default function AdminTariffCreate() {
                       onClick={() => {
                         const gb = toNumber(newPackageGb, 0);
                         const price = toNumber(newPackagePrice, 0);
-                        if (gb > 0 && price > 0 && !trafficTopupPackages[String(gb)]) {
+                        if (gb > 0 && price >= 0 && !trafficTopupPackages[String(gb)]) {
                           setTrafficTopupPackages((prev) => ({
                             ...prev,
                             [String(gb)]: price * 100,
@@ -881,7 +1067,7 @@ export default function AdminTariffCreate() {
                                 setEditingPackagePrices((prev) => ({ ...prev, [gb]: val }));
                                 if (val !== '') {
                                   const num = parseFloat(val);
-                                  if (!isNaN(num)) {
+                                  if (!Number.isNaN(num)) {
                                     setTrafficTopupPackages((prev) => ({
                                       ...prev,
                                       [gb]: Math.max(0, num) * 100,
@@ -920,7 +1106,7 @@ export default function AdminTariffCreate() {
                               }}
                               className="rounded-lg p-2 text-dark-400 transition-colors hover:bg-error-500/20 hover:text-error-400"
                             >
-                              <TrashIcon />
+                              <TrashIcon className="h-4 w-4" />
                             </button>
                           </div>
                         ))}
@@ -943,6 +1129,11 @@ export default function AdminTariffCreate() {
                 { value: 'DAY', labelKey: 'admin.tariffs.resetModeDaily', emoji: '📅' },
                 { value: 'WEEK', labelKey: 'admin.tariffs.resetModeWeekly', emoji: '📆' },
                 { value: 'MONTH', labelKey: 'admin.tariffs.resetModeMonthly', emoji: '🗓️' },
+                {
+                  value: 'MONTH_ROLLING',
+                  labelKey: 'admin.tariffs.resetModeMonthRolling',
+                  emoji: '🔄',
+                },
                 { value: 'NO_RESET', labelKey: 'admin.tariffs.resetModeNever', emoji: '🚫' },
               ].map((option) => (
                 <button
@@ -989,17 +1180,19 @@ export default function AdminTariffCreate() {
                       }`}
                     >
                       <div
-                        className={`flex h-5 w-5 items-center justify-center rounded ${
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded ${
                           isSelected
                             ? isDaily
                               ? 'bg-warning-500 text-white'
-                              : 'bg-accent-500 text-white'
+                              : 'bg-accent-500 text-on-accent'
                             : 'bg-dark-600'
                         }`}
                       >
                         {isSelected && <CheckIcon />}
                       </div>
-                      <span className="flex-1 text-sm font-medium">{group.name}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {group.name}
+                      </span>
                     </button>
                   );
                 })}
@@ -1021,6 +1214,9 @@ export default function AdminTariffCreate() {
               <button
                 type="button"
                 onClick={() => setIsActive(!isActive)}
+                role="switch"
+                aria-checked={isActive}
+                aria-label={t('admin.tariffs.isActiveLabel')}
                 className={`relative h-6 w-11 rounded-full transition-colors ${
                   isActive ? 'bg-success-500' : 'bg-dark-600'
                 }`}
@@ -1028,6 +1224,56 @@ export default function AdminTariffCreate() {
                 <span
                   className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${
                     isActive ? 'left-6' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+            {/* Highlight tariff toggle */}
+            <div className="flex items-center justify-between rounded-lg bg-dark-800 p-3">
+              <div>
+                <span className="text-sm font-medium text-dark-200">
+                  {t('admin.tariffs.highlightLabel')}
+                </span>
+                <p className="text-xs text-dark-500">{t('admin.tariffs.highlightHint')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTariffHighlighted(!isTariffHighlighted)}
+                role="switch"
+                aria-checked={isTariffHighlighted}
+                aria-label={t('admin.tariffs.highlightLabel')}
+                className={`relative h-6 w-11 rounded-full transition-colors ${
+                  isTariffHighlighted ? 'bg-urgent-400' : 'bg-dark-600'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${
+                    isTariffHighlighted ? 'left-6' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+            {/* Show in gift toggle */}
+            <div className="flex items-center justify-between rounded-lg bg-dark-800 p-3">
+              <div>
+                <span className="text-sm font-medium text-dark-200">
+                  {t('admin.tariffs.showInGiftLabel')}
+                </span>
+                <p className="text-xs text-dark-500">{t('admin.tariffs.showInGiftHint')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInGift(!showInGift)}
+                role="switch"
+                aria-checked={showInGift}
+                aria-label={t('admin.tariffs.showInGiftLabel')}
+                className={`relative h-6 w-11 rounded-full transition-colors ${
+                  showInGift ? 'bg-accent-500' : 'bg-dark-600'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${
+                    showInGift ? 'left-6' : 'left-1'
                   }`}
                 />
               </button>
@@ -1056,7 +1302,7 @@ export default function AdminTariffCreate() {
             disabled={!isValid || isLoading}
             className="btn-primary flex items-center gap-2"
           >
-            {isLoading && <RefreshIcon />}
+            {isLoading && <RefreshIcon spinning />}
             {isLoading ? t('admin.tariffs.savingButton') : t('admin.tariffs.saveButton')}
           </button>
         </div>

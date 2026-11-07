@@ -1,7 +1,5 @@
 import apiClient from './client';
 
-// ============ Types ============
-
 export interface TrafficPurchaseInfo {
   id: number;
   traffic_gb: number;
@@ -13,6 +11,8 @@ export interface TrafficPurchaseInfo {
 
 export interface UserSubscriptionInfo {
   id: number;
+  /** Panel identity of this subscription; older backends may omit it. */
+  remnawave_id?: number | null;
   status: string;
   is_trial: boolean;
   start_date: string | null;
@@ -23,8 +23,12 @@ export interface UserSubscriptionInfo {
   tariff_id: number | null;
   tariff_name: string | null;
   autopay_enabled: boolean;
+  sbp_recurring_status: string | null;
+  sbp_recurring_id: number | null;
   is_active: boolean;
   days_remaining: number;
+  /** Открыт временный доступ (грейс) до этого числа; null — обычная подписка. */
+  grace_until?: string | null;
   purchased_traffic_gb: number;
   traffic_purchases: TrafficPurchaseInfo[];
 }
@@ -33,6 +37,21 @@ export interface UserPromoGroupInfo {
   id: number;
   name: string;
   is_default: boolean;
+}
+
+export interface UserListItemSubscription {
+  id: number;
+  tariff_id: number | null;
+  tariff_name: string | null;
+  status: string;
+  is_trial: boolean;
+  end_date: string | null;
+  days_remaining: number;
+  traffic_used_gb: number;
+  traffic_limit_gb: number;
+  device_limit: number;
+  /** Открыт временный доступ (грейс) до этого числа; null — обычная подписка. */
+  grace_until?: string | null;
 }
 
 export interface UserListItem {
@@ -47,10 +66,22 @@ export interface UserListItem {
   balance_rubles: number;
   created_at: string;
   last_activity: string | null;
+  /** Подключён к VPN прямо сейчас (по панели); null/нет поля — панель не ответила или бот старый. */
+  is_online?: boolean | null;
+  /** Отметка последнего подключения из панели: по ней строка сама гасит точку «в сети». */
+  online_at?: string | null;
+  /** Открыт временный доступ (грейс) до этого числа — подписка истекла, а VPN ещё работает. */
+  grace_until?: string | null;
   has_subscription: boolean;
   subscription_status: string | null;
   subscription_is_trial: boolean;
   subscription_end_date: string | null;
+  tariff_id: number | null;
+  tariff_name: string | null;
+  traffic_used_gb: number;
+  traffic_limit_gb: number;
+  device_limit: number;
+  days_remaining: number;
   promo_group_id: number | null;
   promo_group_name: string | null;
   total_spent_kopeks: number;
@@ -58,6 +89,7 @@ export interface UserListItem {
   has_restrictions: boolean;
   restriction_topup: boolean;
   restriction_subscription: boolean;
+  subscriptions?: UserListItemSubscription[];
 }
 
 export interface UsersListResponse {
@@ -105,6 +137,7 @@ export interface UserDetailResponse {
   last_activity: string | null;
   cabinet_last_login: string | null;
   subscription: UserSubscriptionInfo | null;
+  subscriptions: UserSubscriptionInfo[];
   promo_group: UserPromoGroupInfo | null;
   referral: UserReferralInfo;
   total_spent_kopeks: number;
@@ -121,7 +154,10 @@ export interface UserDetailResponse {
   promo_offer_discount_source: string | null;
   promo_offer_discount_expires_at: string | null;
   recent_transactions: UserTransactionItem[];
-  remnawave_uuid: string | null;
+  remnawave_id: number | null;
+  /** Режим продаж бота; старый бот не присылает — см. `salesModeOf`. */
+  sales_mode?: 'classic' | 'tariffs';
+  multi_tariff_enabled?: boolean;
 }
 
 export interface UserPanelInfo {
@@ -138,6 +174,37 @@ export interface UserPanelInfo {
   online_at: string | null;
   last_connected_node_uuid: string | null;
   last_connected_node_name: string | null;
+}
+
+export interface SubscriptionRequestRecord {
+  id: number;
+  // Remnawave 2.8.0 renamed this panel field userUuid (uuid) -> userId (number).
+  userId: number;
+  requestAt: string;
+  requestIp: string | null;
+  userAgent: string | null;
+}
+
+export interface SubscriptionRequestHistory {
+  total: number;
+  records: SubscriptionRequestRecord[];
+}
+
+export interface UserActivityItem {
+  type: string;
+  subtype: string | null;
+  source: string | null;
+  title: string | null;
+  amount_kopeks: number | null;
+  timestamp: string;
+  meta: Record<string, unknown> | null;
+}
+
+export interface UserActivityResponse {
+  items: UserActivityItem[];
+  total: number;
+  offset: number;
+  limit: number;
 }
 
 export interface UserNodeUsageItem {
@@ -219,7 +286,7 @@ export interface UserAvailableTariffsResponse {
 
 // Sync types
 export interface PanelUserInfo {
-  uuid: string | null;
+  id: number;
   short_uuid: string | null;
   username: string | null;
   status: string | null;
@@ -243,7 +310,7 @@ export interface SyncToPanelResponse {
   success: boolean;
   message: string;
   action: string;
-  panel_uuid: string | null;
+  panel_user_id: number | null;
   changes: Record<string, unknown>;
   errors: string[];
 }
@@ -251,7 +318,9 @@ export interface SyncToPanelResponse {
 export interface PanelSyncStatusResponse {
   user_id: number;
   telegram_id: number;
-  remnawave_uuid: string | null;
+  remnawave_id: number | null;
+  subscription_id: number | null;
+  subscription_tariff_name: string | null;
   last_sync: string | null;
   bot_subscription_status: string | null;
   bot_subscription_end_date: string | null;
@@ -266,6 +335,9 @@ export interface PanelSyncStatusResponse {
   panel_traffic_used_gb: number;
   panel_device_limit: number;
   panel_squads: string[];
+  /** Открыт временный доступ (грейс): панель намеренно держит его настройки. */
+  grace_open?: boolean;
+  grace_until?: string | null;
   has_differences: boolean;
   differences: string[];
 }
@@ -296,7 +368,9 @@ export interface UpdateSubscriptionRequest {
     | 'create'
     | 'add_traffic'
     | 'remove_traffic'
-    | 'set_device_limit';
+    | 'set_device_limit'
+    | 'shorten';
+  subscription_id?: number;
   days?: number;
   end_date?: string;
   tariff_id?: number;
@@ -350,26 +424,79 @@ export interface SyncToPanelRequest {
   update_squads?: boolean;
 }
 
-// ============ API ============
+export interface AdminUserGiftItem {
+  id: number;
+  token: string;
+  status: string;
+  tariff_name: string | null;
+  period_days: number;
+  device_limit: number;
+  amount_kopeks: number;
+  payment_method: string | null;
+  gift_recipient_type: string | null;
+  gift_recipient_value: string | null;
+  gift_message: string | null;
+  buyer_user_id: number | null;
+  buyer_username: string | null;
+  buyer_full_name: string | null;
+  receiver_user_id: number | null;
+  receiver_username: string | null;
+  receiver_full_name: string | null;
+  created_at: string | null;
+  paid_at: string | null;
+  delivered_at: string | null;
+}
+
+export interface AdminUserGiftsResponse {
+  sent: AdminUserGiftItem[];
+  received: AdminUserGiftItem[];
+  sent_total: number;
+  received_total: number;
+}
+
+export interface UsersListParams {
+  offset?: number;
+  limit?: number;
+  search?: string;
+  email?: string;
+  status?: 'active' | 'blocked' | 'deleted';
+  subscription_status?: string;
+  tariff_id?: string;
+  promo_group_id?: number;
+  campaign_id?: number;
+  partner_id?: number;
+  /** Подписка со статусом active истекает в ближайшие N дней (сегмент «истекают»). */
+  expires_within_days?: number;
+  /** Была активность в боте или кабинете за последние N минут. */
+  active_within_minutes?: number;
+  /** Только подключённые к VPN прямо сейчас — по панели (сегмент «онлайн»). */
+  online?: boolean;
+  /** Есть запрет пополнения или покупки. */
+  has_restrictions?: boolean;
+  /** false — ни одной подписки. */
+  has_subscription?: boolean;
+  /** Живая подписка израсходовала от N % лимита (сегмент «трафик на исходе»). */
+  traffic_used_percent_min?: number;
+  /** 0 — ни одной покупки (сегмент «без покупок»). */
+  purchase_count?: number;
+  /** Только с открытым временным доступом (сегмент «в грейсе»). */
+  in_grace?: boolean;
+  sort_by?:
+    | 'created_at'
+    | 'balance'
+    | 'traffic'
+    | 'last_activity'
+    | 'total_spent'
+    | 'purchase_count'
+    | 'subscription_end_date'
+    | 'grace_until';
+  /** Не задано — привычное направление ключа (истечение и грейс с ближайших, остальное с больших). */
+  sort_order?: 'asc' | 'desc';
+}
 
 export const adminUsersApi = {
   // List users
-  getUsers: async (
-    params: {
-      offset?: number;
-      limit?: number;
-      search?: string;
-      email?: string;
-      status?: 'active' | 'blocked' | 'deleted';
-      sort_by?:
-        | 'created_at'
-        | 'balance'
-        | 'traffic'
-        | 'last_activity'
-        | 'total_spent'
-        | 'purchase_count';
-    } = {},
-  ): Promise<UsersListResponse> => {
+  getUsers: async (params: UsersListParams = {}): Promise<UsersListResponse> => {
     const response = await apiClient.get('/cabinet/admin/users', { params });
     return response.data;
   },
@@ -421,6 +548,27 @@ export const adminUsersApi = {
     return response.data;
   },
 
+  // Cancel a user's SBP (Platega) recurring auto-payment
+  cancelSbpRecurring: async (userId: number, subId: number): Promise<{ status: string }> => {
+    const response = await apiClient.post(
+      `/cabinet/admin/users/${userId}/subscriptions/${subId}/cancel-sbp-recurring`,
+    );
+    return response.data;
+  },
+
+  // Delete one of the user's subscriptions (multi-tariff: trials pile up)
+  deleteSubscription: async (
+    userId: number,
+    subId: number,
+    force = false,
+  ): Promise<{ status: string }> => {
+    const response = await apiClient.delete(
+      `/cabinet/admin/users/${userId}/subscriptions/${subId}`,
+      { params: force ? { force: true } : undefined },
+    );
+    return response.data;
+  },
+
   // Update status
   updateStatus: async (
     userId: number,
@@ -445,6 +593,15 @@ export const adminUsersApi = {
   // Unblock user
   unblockUser: async (userId: number): Promise<UpdateUserStatusResponse> => {
     const response = await apiClient.post(`/cabinet/admin/users/${userId}/unblock`);
+    return response.data;
+  },
+
+  // Send direct Telegram message to user via bot (parity with bot's admin action)
+  sendMessage: async (
+    userId: number,
+    text: string,
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.post(`/cabinet/admin/users/${userId}/send-message`, { text });
     return response.data;
   },
 
@@ -505,6 +662,34 @@ export const adminUsersApi = {
     return response.data;
   },
 
+  // Assign a referrer to this user
+  assignReferrer: async (
+    userId: number,
+    referrerId: number,
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.post(`/cabinet/admin/users/${userId}/assign-referrer`, {
+      referrer_id: referrerId,
+    });
+    return response.data;
+  },
+
+  // Remove this user's referrer
+  removeReferrer: async (userId: number): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.delete(`/cabinet/admin/users/${userId}/referrer`);
+    return response.data;
+  },
+
+  // Remove a specific referral from this user's list
+  removeReferral: async (
+    userId: number,
+    referralUserId: number,
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.delete(
+      `/cabinet/admin/users/${userId}/referrals/${referralUserId}`,
+    );
+    return response.data;
+  },
+
   // Get referrals
   getReferrals: async (userId: number, offset = 0, limit = 50): Promise<UsersListResponse> => {
     const response = await apiClient.get(`/cabinet/admin/users/${userId}/referrals`, {
@@ -532,8 +717,12 @@ export const adminUsersApi = {
   },
 
   // Sync status
-  getSyncStatus: async (userId: number): Promise<PanelSyncStatusResponse> => {
-    const response = await apiClient.get(`/cabinet/admin/users/${userId}/sync/status`);
+  getSyncStatus: async (
+    userId: number,
+    subscriptionId?: number,
+  ): Promise<PanelSyncStatusResponse> => {
+    const params = subscriptionId != null ? { subscription_id: subscriptionId } : undefined;
+    const response = await apiClient.get(`/cabinet/admin/users/${userId}/sync/status`, { params });
     return response.data;
   },
 
@@ -541,8 +730,12 @@ export const adminUsersApi = {
   syncFromPanel: async (
     userId: number,
     data: SyncFromPanelRequest = {},
+    subscriptionId?: number,
   ): Promise<SyncFromPanelResponse> => {
-    const response = await apiClient.post(`/cabinet/admin/users/${userId}/sync/from-panel`, data);
+    const params = subscriptionId != null ? { subscription_id: subscriptionId } : undefined;
+    const response = await apiClient.post(`/cabinet/admin/users/${userId}/sync/from-panel`, data, {
+      params,
+    });
     return response.data;
   },
 
@@ -550,8 +743,12 @@ export const adminUsersApi = {
   syncToPanel: async (
     userId: number,
     data: SyncToPanelRequest = {},
+    subscriptionId?: number,
   ): Promise<SyncToPanelResponse> => {
-    const response = await apiClient.post(`/cabinet/admin/users/${userId}/sync/to-panel`, data);
+    const params = subscriptionId != null ? { subscription_id: subscriptionId } : undefined;
+    const response = await apiClient.post(`/cabinet/admin/users/${userId}/sync/to-panel`, data, {
+      params,
+    });
     return response.data;
   },
 
@@ -574,26 +771,81 @@ export const adminUsersApi = {
   },
 
   // Get panel info
-  getPanelInfo: async (userId: number): Promise<UserPanelInfo> => {
-    const response = await apiClient.get(`/cabinet/admin/users/${userId}/panel-info`);
+  getPanelInfo: async (userId: number, subscriptionId?: number): Promise<UserPanelInfo> => {
+    const response = await apiClient.get(`/cabinet/admin/users/${userId}/panel-info`, {
+      params: subscriptionId != null ? { subscription_id: subscriptionId } : undefined,
+    });
     return response.data;
   },
 
   // Get node usage (always 30 days with daily breakdown)
-  getNodeUsage: async (userId: number): Promise<UserNodeUsageResponse> => {
-    const response = await apiClient.get(`/cabinet/admin/users/${userId}/node-usage`);
+  getNodeUsage: async (userId: number, subscriptionId?: number): Promise<UserNodeUsageResponse> => {
+    const response = await apiClient.get(`/cabinet/admin/users/${userId}/node-usage`, {
+      params: subscriptionId != null ? { subscription_id: subscriptionId } : undefined,
+    });
+    return response.data;
+  },
+
+  // Unified activity timeline (bot + cabinet actions)
+  getUserActivity: async (
+    userId: number,
+    offset = 0,
+    limit = 25,
+    types?: string,
+  ): Promise<UserActivityResponse> => {
+    const params: Record<string, unknown> = { offset, limit };
+    if (types) params.types = types;
+    const response = await apiClient.get(`/cabinet/admin/users/${userId}/activity`, { params });
+    return response.data;
+  },
+
+  // Get subscription request history from Remnawave panel
+  getSubscriptionRequestHistory: async (
+    userId: number,
+    subscriptionId?: number,
+    offset = 0,
+    limit = 20,
+  ): Promise<SubscriptionRequestHistory> => {
+    const params: Record<string, unknown> = { offset, limit };
+    if (subscriptionId != null) params.subscription_id = subscriptionId;
+    const response = await apiClient.get(
+      `/cabinet/admin/users/${userId}/subscription-request-history`,
+      { params },
+    );
     return response.data;
   },
 
   // Get user devices
   getUserDevices: async (
     userId: number,
+    subscriptionId?: number,
   ): Promise<{
-    devices: { hwid: string; platform: string; device_model: string; created_at: string | null }[];
+    devices: {
+      hwid: string;
+      platform: string;
+      device_model: string;
+      created_at: string | null;
+      local_name?: string | null;
+    }[];
     total: number;
     device_limit: number;
   }> => {
-    const response = await apiClient.get(`/cabinet/admin/users/${userId}/devices`);
+    const response = await apiClient.get(`/cabinet/admin/users/${userId}/devices`, {
+      params: subscriptionId != null ? { subscription_id: subscriptionId } : undefined,
+    });
+    return response.data;
+  },
+
+  // Set / clear local device alias on behalf of the user (admin override).
+  renameUserDevice: async (
+    userId: number,
+    hwid: string,
+    name: string | null,
+  ): Promise<{ hwid: string; local_name: string | null }> => {
+    const response = await apiClient.patch(
+      `/cabinet/admin/users/${userId}/devices/${encodeURIComponent(hwid)}/name`,
+      { name },
+    );
     return response.data;
   },
 
@@ -601,16 +853,28 @@ export const adminUsersApi = {
   deleteUserDevice: async (
     userId: number,
     hwid: string,
+    subscriptionId?: number,
   ): Promise<{ success: boolean; message: string; deleted_hwid: string | null }> => {
-    const response = await apiClient.delete(`/cabinet/admin/users/${userId}/devices/${hwid}`);
+    const response = await apiClient.delete(`/cabinet/admin/users/${userId}/devices/${hwid}`, {
+      params: subscriptionId != null ? { subscription_id: subscriptionId } : undefined,
+    });
     return response.data;
   },
 
   // Reset all devices
   resetUserDevices: async (
     userId: number,
+    subscriptionId?: number,
   ): Promise<{ success: boolean; message: string; deleted_count: number }> => {
-    const response = await apiClient.delete(`/cabinet/admin/users/${userId}/devices`);
+    const response = await apiClient.delete(`/cabinet/admin/users/${userId}/devices`, {
+      params: subscriptionId != null ? { subscription_id: subscriptionId } : undefined,
+    });
+    return response.data;
+  },
+
+  // Get user gifts
+  getUserGifts: async (userId: number): Promise<AdminUserGiftsResponse> => {
+    const response = await apiClient.get(`/cabinet/admin/users/${userId}/gifts`);
     return response.data;
   },
 };

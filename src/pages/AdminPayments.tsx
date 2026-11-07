@@ -1,70 +1,134 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router';
+import { backTo } from '@/components/admin';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { adminPaymentsApi } from '../api/adminPayments';
+import { METHOD_LABELS } from '../constants/paymentMethods';
+import { adminPaymentsApi, type SearchStats } from '../api/adminPayments';
+import { DateField } from '../components/DateField';
 import { useCurrency } from '../hooks/useCurrency';
 import type { PendingPayment, PaginatedResponse } from '../types';
 import { usePlatform } from '../platform/hooks/usePlatform';
+import { StatCard } from '@/components/stats';
+import {
+  BackIcon,
+  SearchIcon,
+  CalendarIcon,
+  RefreshIcon,
+  CheckCircleIcon,
+  ChartBarIcon,
+  ClockIcon,
+  XCircleIcon,
+} from '@/components/icons';
 
-// BackIcon
-const BackIcon = () => (
-  <svg
-    className="h-5 w-5 text-dark-400"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-  </svg>
-);
+interface StatusBadgeProps {
+  status: string;
+}
+
+function StatusBadge({ status }: StatusBadgeProps) {
+  const styles: Record<string, string> = {
+    paid: 'bg-success-500/20 text-success-400',
+    pending: 'bg-warning-500/20 text-warning-400',
+    cancelled: 'bg-error-500/20 text-error-400',
+  };
+
+  const normalized = status.toLowerCase();
+  const match = Object.keys(styles).find((key) => normalized.includes(key));
+
+  return (
+    <span
+      className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${match ? styles[match] : 'bg-dark-700/50 text-dark-300'}`}
+    >
+      {status}
+    </span>
+  );
+}
 
 export default function AdminPayments() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { formatAmount, currencySymbol } = useCurrency();
   const { capabilities } = usePlatform();
 
-  const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [periodFilter, setPeriodFilter] = useState<string>('24h');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [showDateRange, setShowDateRange] = useState(false);
   const [methodFilter, setMethodFilter] = useState<string>('');
+  const [page, setPage] = useState(1);
   const [checkingPaymentId, setCheckingPaymentId] = useState<string | null>(null);
+
+  // Debounce search input (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Reset page on filter changes
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, periodFilter, methodFilter, dateFrom, dateTo]);
+
+  // Auto-refresh only when filters are at defaults and no search
+  const isDefaultFilters =
+    !searchQuery && statusFilter === 'all' && periodFilter === '24h' && !methodFilter;
+
+  // Shared query params
+  const queryParams = {
+    search: searchQuery || undefined,
+    status_filter: statusFilter,
+    method_filter: methodFilter || undefined,
+    period: periodFilter === 'custom' ? undefined : periodFilter,
+    date_from: periodFilter === 'custom' && dateFrom ? dateFrom : undefined,
+    date_to: periodFilter === 'custom' && dateTo ? dateTo : undefined,
+  };
 
   // Fetch payments
   const {
     data: payments,
     isLoading,
+    isError,
     refetch,
   } = useQuery<PaginatedResponse<PendingPayment>>({
-    queryKey: ['admin-payments', page, methodFilter],
+    queryKey: ['admin-payments-search', queryParams, page],
     queryFn: () =>
-      adminPaymentsApi.getPendingPayments({
+      adminPaymentsApi.searchPayments({
+        ...queryParams,
         page,
         per_page: 20,
-        method_filter: methodFilter || undefined,
       }),
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
+    refetchInterval: isDefaultFilters ? 30000 : false,
   });
 
   // Fetch stats
-  const { data: stats } = useQuery({
-    queryKey: ['admin-payments-stats'],
-    queryFn: adminPaymentsApi.getStats,
-    refetchInterval: 30000,
+  const { data: stats } = useQuery<SearchStats>({
+    queryKey: ['admin-payments-search-stats', queryParams],
+    queryFn: () => adminPaymentsApi.getSearchStats(queryParams),
+    refetchInterval: isDefaultFilters ? 30000 : false,
   });
 
   // Check payment mutation
   const checkPaymentMutation = useMutation({
-    mutationFn: ({ method, paymentId }: { method: string; paymentId: number }) =>
-      adminPaymentsApi.checkPaymentStatus(method, paymentId),
-    onSuccess: async (result) => {
-      if (result.status_changed) {
-        await refetch();
-        queryClient.invalidateQueries({ queryKey: ['admin-payments-stats'] });
-      } else {
-        await refetch();
-      }
+    mutationFn: ({
+      method,
+      paymentId,
+      source,
+    }: {
+      method: string;
+      paymentId: number;
+      source: 'provider' | 'landing';
+    }) => adminPaymentsApi.checkPaymentStatus(method, paymentId, source),
+    onSuccess: async () => {
+      await refetch();
+      queryClient.invalidateQueries({ queryKey: ['admin-payments-search-stats'] });
     },
     onSettled: () => {
       setCheckingPaymentId(null);
@@ -72,15 +136,55 @@ export default function AdminPayments() {
   });
 
   const handleCheckPayment = (payment: PendingPayment) => {
-    setCheckingPaymentId(`${payment.method}_${payment.id}`);
-    checkPaymentMutation.mutate({ method: payment.method, paymentId: payment.id });
+    setCheckingPaymentId(`${payment.source ?? 'provider'}_${payment.method}_${payment.id}`);
+    checkPaymentMutation.mutate({
+      method: payment.method,
+      paymentId: payment.id,
+      source: payment.source ?? 'provider',
+    });
   };
 
-  // Get unique methods from stats for filter
+  const handleResetSearch = () => {
+    setSearchInput('');
+    setSearchQuery('');
+    setPage(1);
+  };
+
+  const handleStatusCardClick = (status: string) => {
+    setStatusFilter(statusFilter === status ? 'all' : status);
+  };
+
+  const handlePeriodChange = (period: string) => {
+    if (period === 'custom') {
+      setPeriodFilter('custom');
+      setShowDateRange(true);
+    } else {
+      setPeriodFilter(period);
+      setShowDateRange(false);
+    }
+  };
+
+  // Get unique methods from stats for filter dropdown
   const methodOptions = stats?.by_method ? Object.keys(stats.by_method) : [];
 
+  // Period filter options
+  const periodOptions = [
+    { value: '24h', label: t('admin.payments.period24h') },
+    { value: '7d', label: t('admin.payments.period7d') },
+    { value: '30d', label: t('admin.payments.period30d') },
+    { value: 'all', label: t('admin.payments.periodAll') },
+  ];
+
+  // Status filter options
+  const statusOptions = [
+    { value: 'all', label: t('admin.payments.statusAll') },
+    { value: 'pending', label: t('admin.payments.statusPending') },
+    { value: 'paid', label: t('admin.payments.statusPaid') },
+    { value: 'cancelled', label: t('admin.payments.statusCancelled') },
+  ];
+
   return (
-    <div className="space-y-6">
+    <div className="animate-fade-in space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -88,99 +192,231 @@ export default function AdminPayments() {
           {!capabilities.hasBackButton && (
             <button
               onClick={() => navigate('/admin')}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
             >
               <BackIcon />
             </button>
           )}
           <div>
-            <h1 className="text-2xl font-bold text-dark-50">{t('admin.payments.title')}</h1>
+            <h1 className="text-xl font-bold text-dark-100">{t('admin.payments.title')}</h1>
             <p className="text-sm text-dark-400">{t('admin.payments.description')}</p>
           </div>
         </div>
         <button onClick={() => refetch()} className="btn-secondary flex items-center gap-2">
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-            />
-          </svg>
+          <RefreshIcon className="h-4 w-4" />
           {t('common.refresh')}
         </button>
       </div>
 
-      {/* Stats cards */}
-      {stats && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          <div className="rounded-xl border border-dark-700/50 bg-dark-800/50 p-4">
-            <div className="text-2xl font-bold text-dark-50">{stats.total_pending}</div>
-            <div className="text-sm text-dark-400">{t('admin.payments.totalPending')}</div>
+      {/* Search bar */}
+      <div>
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-dark-500">
+            <SearchIcon />
           </div>
-          {Object.entries(stats.by_method).map(([method, count]) => (
-            <div
-              key={method}
-              className={`cursor-pointer rounded-xl border p-4 transition-all ${
-                methodFilter === method
-                  ? 'border-accent-500/50 bg-accent-500/20'
-                  : 'border-dark-700/50 bg-dark-800/50 hover:border-dark-600'
-              }`}
-              onClick={() => setMethodFilter(methodFilter === method ? '' : method)}
-            >
-              <div className="text-2xl font-bold text-dark-50">{count}</div>
-              <div className="text-sm text-dark-400">{method}</div>
-            </div>
-          ))}
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder={t('admin.payments.searchPlaceholder')}
+            className="w-full rounded-xl border border-dark-700 bg-dark-800 py-3 pl-10 pr-4 text-dark-100 placeholder-dark-500 transition-colors focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+          />
+        </div>
+        <p className="mt-1.5 text-xs text-dark-500">{t('admin.payments.searchHint')}</p>
+      </div>
+
+      {/* Search result banner */}
+      {searchQuery && (
+        <div className="flex items-center justify-between rounded-xl border border-accent-500/30 bg-accent-500/10 px-4 py-3">
+          <span className="text-sm text-accent-300">
+            {t('admin.payments.searchResults', {
+              query: searchQuery,
+              count: payments?.total ?? 0,
+            })}
+          </span>
+          <button
+            onClick={handleResetSearch}
+            className="ml-3 rounded-lg px-3 py-1 text-sm text-accent-400 transition-colors hover:bg-accent-500/20"
+          >
+            {t('admin.payments.resetSearch')}
+          </button>
         </div>
       )}
 
-      {/* Filter */}
-      {methodOptions.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm text-dark-400">{t('admin.payments.filterByMethod')}:</span>
-          <button
-            onClick={() => setMethodFilter('')}
-            className={`rounded-lg px-3 py-1.5 text-sm transition-all ${
-              methodFilter === ''
-                ? 'bg-accent-500 text-white'
-                : 'bg-dark-800 text-dark-300 hover:bg-dark-700'
-            }`}
-          >
-            {t('common.all')}
-          </button>
-          {methodOptions.map((method) => (
+      {/* Filters row */}
+      <div className="space-y-3">
+        {/* Status filter pills */}
+        <div className="flex flex-wrap items-center gap-2">
+          {statusOptions.map((option) => (
             <button
-              key={method}
-              onClick={() => setMethodFilter(method)}
+              key={option.value}
+              onClick={() => setStatusFilter(option.value)}
               className={`rounded-lg px-3 py-1.5 text-sm transition-all ${
-                methodFilter === method
-                  ? 'bg-accent-500 text-white'
+                statusFilter === option.value
+                  ? 'bg-accent-500 text-on-accent'
                   : 'bg-dark-800 text-dark-300 hover:bg-dark-700'
               }`}
             >
-              {method}
+              {option.label}
             </button>
           ))}
+        </div>
+
+        {/* Period filter pills + Method filter */}
+        <div className="flex flex-wrap items-center gap-2">
+          {periodOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => handlePeriodChange(option.value)}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-all ${
+                periodFilter === option.value
+                  ? 'bg-accent-500 text-on-accent'
+                  : 'bg-dark-800 text-dark-300 hover:bg-dark-700'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+          <button
+            onClick={() => handlePeriodChange('custom')}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-all ${
+              periodFilter === 'custom'
+                ? 'bg-accent-500 text-on-accent'
+                : 'bg-dark-800 text-dark-300 hover:bg-dark-700'
+            }`}
+          >
+            <CalendarIcon className="h-4 w-4" />
+            {t('admin.payments.periodCustom')}
+          </button>
+
+          {/* Method filter dropdown */}
+          {methodOptions.length > 0 && (
+            <select
+              value={methodFilter}
+              onChange={(e) => setMethodFilter(e.target.value)}
+              className="rounded-lg border border-dark-700 bg-dark-800 px-3 py-1.5 text-sm text-dark-300 transition-colors focus:border-accent-500 focus:outline-none"
+            >
+              <option value="">{t('admin.payments.allMethods')}</option>
+              {methodOptions.map((method) => (
+                <option key={method} value={method}>
+                  {METHOD_LABELS[method] ?? method}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {/* Date range panel */}
+      {showDateRange && (
+        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-accent-500/30 bg-accent-500/5 p-4">
+          <div className="min-w-0 flex-1">
+            <label className="mb-1 block text-xs text-dark-400">
+              {t('admin.payments.dateFrom')}
+            </label>
+            <DateField
+              value={dateFrom}
+              max={dateTo}
+              onChange={setDateFrom}
+              className="flex w-full items-center gap-2 rounded-lg border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-dark-100 transition-colors hover:border-accent-500"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <label className="mb-1 block text-xs text-dark-400">{t('admin.payments.dateTo')}</label>
+            <DateField
+              value={dateTo}
+              min={dateFrom}
+              onChange={setDateTo}
+              className="flex w-full items-center gap-2 rounded-lg border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-dark-100 transition-colors hover:border-accent-500"
+            />
+          </div>
+          <button onClick={() => refetch()} className="btn-primary px-4 py-2 text-sm">
+            {t('admin.payments.applyDate')}
+          </button>
+        </div>
+      )}
+
+      {/* Stats cards */}
+      {stats && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <button
+            type="button"
+            onClick={() => handleStatusCardClick('all')}
+            className={`rounded-xl text-left transition-all ${
+              statusFilter === 'all' ? 'ring-2 ring-accent-500' : ''
+            }`}
+          >
+            <StatCard
+              label={t('admin.payments.totalCount')}
+              value={stats.total}
+              icon={<ChartBarIcon className="h-5 w-5" />}
+              tone="accent"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleStatusCardClick('pending')}
+            className={`rounded-xl text-left transition-all ${
+              statusFilter === 'pending' ? 'ring-2 ring-warning-500' : ''
+            }`}
+          >
+            <StatCard
+              label={t('admin.payments.pendingCount')}
+              value={stats.pending}
+              icon={<ClockIcon className="h-5 w-5" />}
+              tone="warning"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleStatusCardClick('paid')}
+            className={`rounded-xl text-left transition-all ${
+              statusFilter === 'paid' ? 'ring-2 ring-success-500' : ''
+            }`}
+          >
+            <StatCard
+              label={t('admin.payments.paidCount')}
+              value={stats.paid}
+              icon={<CheckCircleIcon className="h-5 w-5" />}
+              tone="success"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleStatusCardClick('cancelled')}
+            className={`rounded-xl text-left transition-all ${
+              statusFilter === 'cancelled' ? 'ring-2 ring-error-500' : ''
+            }`}
+          >
+            <StatCard
+              label={t('admin.payments.cancelledCount')}
+              value={stats.cancelled}
+              icon={<XCircleIcon className="h-5 w-5" />}
+              tone="error"
+            />
+          </button>
         </div>
       )}
 
       {/* Payments list */}
       <div className="card">
-        {isLoading ? (
+        {isError ? (
+          <div className="py-12 text-center">
+            <div className="text-dark-400">{t('common.error')}</div>
+            <button onClick={() => refetch()} className="btn-secondary mt-3">
+              {t('common.retry')}
+            </button>
+          </div>
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
           </div>
         ) : payments?.items && payments.items.length > 0 ? (
           <div className="space-y-3">
             {payments.items.map((payment) => {
-              const paymentKey = `${payment.method}_${payment.id}`;
+              const paymentKey = `${payment.source ?? 'provider'}_${payment.method}_${payment.id}`;
               const isChecking = checkingPaymentId === paymentKey;
+              const isCancelled = payment.status.toLowerCase().includes('cancel');
 
               return (
                 <div
@@ -188,42 +424,98 @@ export default function AdminPayments() {
                   className="rounded-xl border border-dark-700/30 bg-dark-800/30 p-4"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 basis-60">
+                      {/* Status badge + method */}
                       <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <StatusBadge status={payment.status_text} />
                         <span className="font-semibold text-dark-100">
                           {payment.method_display}
                         </span>
-                        <span className="rounded-full bg-dark-700/50 px-2 py-0.5 text-sm text-dark-300">
-                          {payment.status_emoji} {payment.status_text}
-                        </span>
                         {payment.is_paid && (
-                          <span className="rounded-full bg-success-500/20 px-2 py-0.5 text-sm text-success-400">
+                          <span className="rounded-full bg-success-500/20 px-2 py-0.5 text-xs font-medium text-success-400">
                             {t('admin.payments.paid')}
                           </span>
                         )}
                       </div>
-                      <div className="text-lg font-semibold text-dark-50">
-                        {formatAmount(payment.amount_rubles)} {currencySymbol}
+
+                      {/* Amount */}
+                      <div
+                        className={`text-lg font-semibold ${
+                          isCancelled ? 'text-dark-500 line-through opacity-60' : 'text-dark-50'
+                        }`}
+                      >
+                        {formatAmount(payment.amount_rubles)}
+                        {'\u00A0'}
+                        {currencySymbol}
                       </div>
+
+                      {/* Invoice ID */}
                       <div className="mt-1 text-sm text-dark-400">
-                        ID: <code className="text-dark-300">{payment.identifier}</code>
+                        <code className="font-mono text-accent-400 break-all">
+                          {payment.identifier}
+                        </code>
                       </div>
-                      <div className="mt-1 text-xs text-dark-500">
-                        {new Date(payment.created_at).toLocaleString()}
-                      </div>
+
                       {/* User info */}
-                      {(payment.user_username || payment.user_telegram_id) && (
+                      {(payment.user_username ||
+                        payment.user_telegram_id ||
+                        payment.user_email) && (
                         <div className="mt-2 text-sm text-dark-400">
                           <span className="text-dark-500">{t('admin.payments.user')}:</span>{' '}
-                          {payment.user_username ? (
-                            <span className="text-dark-200">@{payment.user_username}</span>
+                          {payment.user_id ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/admin/users/${payment.user_id}`, backTo(location));
+                              }}
+                              className="inline-flex max-w-full flex-wrap items-center gap-x-1 text-left transition-colors [overflow-wrap:anywhere] hover:underline"
+                            >
+                              {payment.user_username && (
+                                <span className="text-accent-400">@{payment.user_username}</span>
+                              )}
+                              {payment.user_username &&
+                                (payment.user_telegram_id || payment.user_email) && (
+                                  <span className="text-dark-500"> &middot; </span>
+                                )}
+                              {payment.user_telegram_id && (
+                                <span className="text-accent-300">
+                                  TG: {payment.user_telegram_id}
+                                </span>
+                              )}
+                              {!payment.user_telegram_id && payment.user_email && (
+                                <span className="text-accent-300">{payment.user_email}</span>
+                              )}
+                            </button>
                           ) : (
-                            <span className="text-dark-300">ID: {payment.user_telegram_id}</span>
+                            <>
+                              {payment.user_username && (
+                                <span className="text-dark-200">@{payment.user_username}</span>
+                              )}
+                              {payment.user_username &&
+                                (payment.user_telegram_id || payment.user_email) && (
+                                  <span className="text-dark-500"> &middot; </span>
+                                )}
+                              {payment.user_telegram_id && (
+                                <span className="text-dark-300">
+                                  TG: {payment.user_telegram_id}
+                                </span>
+                              )}
+                              {!payment.user_telegram_id && payment.user_email && (
+                                <span className="text-dark-300">{payment.user_email}</span>
+                              )}
+                            </>
                           )}
                         </div>
                       )}
+
+                      {/* Timestamp */}
+                      <div className="mt-1 text-xs text-dark-500">
+                        {new Date(payment.created_at).toLocaleString()}
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-2">
+
+                    {/* Action buttons */}
+                    <div className="flex flex-wrap gap-2 sm:flex-col">
                       {payment.payment_url && (
                         <a
                           href={payment.payment_url}
@@ -266,9 +558,12 @@ export default function AdminPayments() {
                       )}
                     </div>
                   </div>
+
                   {/* Show result after check */}
                   {checkPaymentMutation.isSuccess &&
-                    checkPaymentMutation.variables?.paymentId === payment.id && (
+                    checkPaymentMutation.variables?.source === (payment.source ?? 'provider') &&
+                    checkPaymentMutation.variables?.paymentId === payment.id &&
+                    checkPaymentMutation.variables?.method === payment.method && (
                       <div
                         className={`mt-3 rounded-lg p-2 text-sm ${
                           checkPaymentMutation.data?.status_changed
@@ -279,6 +574,14 @@ export default function AdminPayments() {
                         {checkPaymentMutation.data?.message}
                       </div>
                     )}
+                  {checkPaymentMutation.isError &&
+                    checkPaymentMutation.variables?.source === (payment.source ?? 'provider') &&
+                    checkPaymentMutation.variables?.paymentId === payment.id &&
+                    checkPaymentMutation.variables?.method === payment.method && (
+                      <div className="mt-3 rounded-lg border border-error-500/30 bg-error-500/10 p-2 text-sm text-error-400">
+                        {t('admin.payments.checkError')}
+                      </div>
+                    )}
                 </div>
               );
             })}
@@ -286,19 +589,7 @@ export default function AdminPayments() {
         ) : (
           <div className="py-12 text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-dark-800">
-              <svg
-                className="h-8 w-8 text-dark-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
+              <CheckCircleIcon className="h-8 w-8 text-dark-500" />
             </div>
             <div className="text-dark-400">{t('admin.payments.noPayments')}</div>
           </div>
@@ -318,7 +609,7 @@ export default function AdminPayments() {
               {t('admin.payments.prev')}
             </button>
             <div className="flex-1 text-center">
-              {t('balance.page', '{current} / {total}', {
+              {t('balance.page', {
                 current: payments.page,
                 total: payments.pages,
               })}

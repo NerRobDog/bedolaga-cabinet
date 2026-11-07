@@ -1,5 +1,7 @@
 export type TrafficZone = 'normal' | 'warning' | 'danger' | 'critical';
 
+export type TrafficColorKey = 'accent' | 'warning' | 'error';
+
 interface TrafficZoneResult {
   zone: TrafficZone;
   textClass: string;
@@ -8,19 +10,25 @@ interface TrafficZoneResult {
   labelKey: string;
   gradientFrom: string;
   gradientTo: string;
-  /** Hex color for inline styles */
-  mainHex: string;
+  /** CSS variable for the main zone color: `rgb(var(--color-accent-400))` */
+  mainVar: string;
+  /** Raw CSS variable reference for opacity manipulation: `var(--color-accent-400)` */
+  mainVarRaw: string;
+  /** Key into ThemeColors for resolving mainHex at runtime */
+  colorKey: TrafficColorKey;
 }
 
 const ZONES: Record<TrafficZone, Omit<TrafficZoneResult, 'zone'>> = {
   normal: {
-    textClass: 'text-success-400',
-    dotClass: 'bg-success-400',
-    glowColor: 'rgba(var(--color-success-500), 0.5)',
+    textClass: 'text-accent-400',
+    dotClass: 'bg-accent-400',
+    glowColor: 'rgba(var(--color-accent-500), 0.5)',
     labelKey: 'dashboard.zone.normal',
-    gradientFrom: 'rgb(var(--color-success-500))',
-    gradientTo: 'rgb(var(--color-success-400))',
-    mainHex: '#00E5A0',
+    gradientFrom: 'rgb(var(--color-accent-500))',
+    gradientTo: 'rgb(var(--color-accent-400))',
+    mainVar: 'rgb(var(--color-accent-400))',
+    mainVarRaw: 'var(--color-accent-400)',
+    colorKey: 'accent',
   },
   warning: {
     textClass: 'text-warning-400',
@@ -29,7 +37,9 @@ const ZONES: Record<TrafficZone, Omit<TrafficZoneResult, 'zone'>> = {
     labelKey: 'dashboard.zone.warning',
     gradientFrom: 'rgb(var(--color-warning-500))',
     gradientTo: 'rgb(var(--color-warning-400))',
-    mainHex: '#FFB800',
+    mainVar: 'rgb(var(--color-warning-400))',
+    mainVarRaw: 'var(--color-warning-400)',
+    colorKey: 'warning',
   },
   danger: {
     textClass: 'text-warning-300',
@@ -38,7 +48,9 @@ const ZONES: Record<TrafficZone, Omit<TrafficZoneResult, 'zone'>> = {
     labelKey: 'dashboard.zone.danger',
     gradientFrom: 'rgb(var(--color-warning-600))',
     gradientTo: 'rgb(var(--color-warning-400))',
-    mainHex: '#FF6B35',
+    mainVar: 'rgb(var(--color-warning-400))',
+    mainVarRaw: 'var(--color-warning-400)',
+    colorKey: 'warning',
   },
   critical: {
     textClass: 'text-error-400',
@@ -47,7 +59,9 @@ const ZONES: Record<TrafficZone, Omit<TrafficZoneResult, 'zone'>> = {
     labelKey: 'dashboard.zone.critical',
     gradientFrom: 'rgb(var(--color-error-500))',
     gradientTo: 'rgb(var(--color-error-400))',
-    mainHex: '#FF3B5C',
+    mainVar: 'rgb(var(--color-error-400))',
+    mainVarRaw: 'var(--color-error-400)',
+    colorKey: 'error',
   },
 };
 

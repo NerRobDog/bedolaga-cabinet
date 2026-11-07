@@ -1,7 +1,5 @@
 import apiClient from './client';
 
-// ============ Types ============
-
 export interface ReleaseItem {
   tag_name: string;
   name: string;
@@ -21,8 +19,6 @@ export interface ReleasesResponse {
   bot: ProjectReleasesInfo;
   cabinet: ProjectReleasesInfo;
 }
-
-// ============ API ============
 
 export const adminUpdatesApi = {
   getReleases: async (): Promise<ReleasesResponse> => {

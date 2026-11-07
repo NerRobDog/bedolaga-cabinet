@@ -1,135 +1,83 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   adminBroadcastsApi,
-  BroadcastFilter,
-  TariffFilter,
-  CombinedBroadcastCreateRequest,
+  type CombinedBroadcastCreateRequest,
+  type CustomBroadcastButton,
 } from '../api/adminBroadcasts';
 import { AdminBackButton } from '../components/admin';
+import {
+  BroadcastAudienceEditor,
+  emptyAudience,
+  isAudienceComplete,
+} from '../components/broadcasts/BroadcastAudienceEditor';
+import { TelegramPreview, EmailPreview } from '../components/broadcasts/BroadcastPreview';
+import {
+  BroadcastIcon,
+  DocumentIcon,
+  EmailIcon,
+  PhotoIcon,
+  RefreshIcon,
+  TelegramIcon,
+  VideoIcon,
+  XIcon,
+} from '@/components/icons';
 
-// Icons
-const BroadcastIcon = () => (
-  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 01-1.44-4.282m3.102.069a18.03 18.03 0 01-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 018.835 2.535M10.34 6.66a23.847 23.847 0 008.835-2.535m0 0A23.74 23.74 0 0018.795 3m.38 1.125a23.91 23.91 0 011.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 001.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 010 3.46"
-    />
-  </svg>
-);
-
-const XIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
-
-const RefreshIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-    />
-  </svg>
-);
-
-const PhotoIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
-    />
-  </svg>
-);
-
-const VideoIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z"
-    />
-  </svg>
-);
-
-const DocumentIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-    />
-  </svg>
-);
-
-const UsersIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"
-    />
-  </svg>
-);
-
-const ChevronDownIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-  </svg>
-);
-
-const TelegramIcon = () => (
-  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
-  </svg>
-);
-
-const EmailIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
-    />
-  </svg>
-);
-
-// Filter labels
-const FILTER_GROUP_LABEL_KEYS: Record<string, string> = {
-  basic: 'admin.broadcasts.filterGroups.basic',
-  subscription: 'admin.broadcasts.filterGroups.subscription',
-  traffic: 'admin.broadcasts.filterGroups.traffic',
-  registration: 'admin.broadcasts.filterGroups.registration',
-  activity: 'admin.broadcasts.filterGroups.activity',
-  source: 'admin.broadcasts.filterGroups.source',
-  tariff: 'admin.broadcasts.filterGroups.tariff',
-  email: 'admin.broadcasts.filterGroups.email',
-};
+/** `?email_user=<id>` opens an Email broadcast for one user from their profile. */
+function parseEmailUserParam(value: string | null): number | null {
+  if (!value || !/^\d+$/.test(value)) return null;
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 && id <= 2_147_483_647 ? id : null;
+}
 
 export default function AdminBroadcastCreate() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const presetEmailUserId = parseEmailUserParam(searchParams.get('email_user'));
+  // Почту кладёт в state карточка пользователя; после перезагрузки остаётся только id.
+  const presetEmailUserLabel =
+    (location.state as { emailUserLabel?: string } | null)?.emailUserLabel ?? null;
 
   // Channel toggles (both can be enabled)
-  const [telegramEnabled, setTelegramEnabled] = useState(true);
-  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [telegramEnabled, setTelegramEnabled] = useState(presetEmailUserId === null);
+  const [emailEnabled, setEmailEnabled] = useState(presetEmailUserId !== null);
 
-  // Separate targets per channel
-  const [telegramTarget, setTelegramTarget] = useState('');
-  const [emailTarget, setEmailTarget] = useState('');
-  const [showTelegramFilters, setShowTelegramFilters] = useState(false);
-  const [showEmailFilters, setShowEmailFilters] = useState(false);
+  // Separate audiences per channel, as in the existing form.
+  const [telegramAudience, setTelegramAudience] = useState(emptyAudience);
+  const [emailAudience, setEmailAudience] = useState(() =>
+    presetEmailUserId === null
+      ? emptyAudience()
+      : {
+          conditions: [
+            {
+              field: 'email_user',
+              operator: 'eq' as const,
+              value: String(presetEmailUserId),
+              label: presetEmailUserLabel ?? `#${presetEmailUserId}`,
+              join: null,
+            },
+          ],
+        },
+  );
+
+  // Broadcast category (system/news/promo)
+  const [category, setCategory] = useState<'system' | 'news' | 'promo'>('system');
 
   // Telegram-specific state
   const [messageText, setMessageText] = useState('');
   const [selectedButtons, setSelectedButtons] = useState<string[]>(['home']);
+  const [customButtons, setCustomButtons] = useState<CustomBroadcastButton[]>([]);
+  const [isAddingCustomButton, setIsAddingCustomButton] = useState(false);
+  const [newButtonLabel, setNewButtonLabel] = useState('');
+  const [newButtonActionType, setNewButtonActionType] = useState<'callback' | 'url'>('callback');
+  const [newButtonActionValue, setNewButtonActionValue] = useState('');
+  const [newButtonEmojiId, setNewButtonEmojiId] = useState('');
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaType, setMediaType] = useState<'photo' | 'video' | 'document'>('photo');
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
@@ -151,6 +99,45 @@ export default function AdminBroadcastCreate() {
   // Submitting state for dual send
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Preview modals
+  const [showTelegramPreview, setShowTelegramPreview] = useState(false);
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
+
+  const previewMediaTypeForModal: 'photo' | 'video' | null =
+    mediaType === 'photo' || mediaType === 'video' ? mediaType : null;
+
+  const previewButtonRows = useMemo(() => {
+    const rows: { text: string; url?: string; callback_data?: string }[][] = [];
+    if (selectedButtons.length > 0) {
+      const presetLabels: Record<string, string> = {
+        balance: t('admin.broadcasts.btnBalance', 'Пополнить баланс'),
+        // Бот отдаёт ключ кнопки как 'referrals' (см. BROADCAST_BUTTONS в admin.py),
+        // раньше тут был 'partners' — из-за рассинхрона кнопка показывалась сырым
+        // ключом 'referrals' вместо «Партнёрка» (Telegram-баг #602989).
+        referrals: t('admin.broadcasts.btnPartners', 'Партнёрка'),
+        promocode: t('admin.broadcasts.btnPromocode', 'Промокод'),
+        connect: t('admin.broadcasts.btnConnect', 'Подключиться'),
+        subscription: t('admin.broadcasts.btnSubscription', 'Подписка'),
+        support: t('admin.broadcasts.btnSupport', 'Техподдержка'),
+        home: t('admin.broadcasts.btnHome', 'На главную'),
+      };
+      for (const id of selectedButtons) {
+        rows.push([{ text: presetLabels[id] || id, callback_data: id }]);
+      }
+    }
+    for (const cb of customButtons) {
+      rows.push([
+        {
+          text: cb.label,
+          ...(cb.action_type === 'url'
+            ? { url: cb.action_value }
+            : { callback_data: cb.action_value }),
+        },
+      ]);
+    }
+    return rows;
+  }, [selectedButtons, customButtons, t]);
+
   // Fetch Telegram filters
   const { data: filtersData, isLoading: filtersLoading } = useQuery({
     queryKey: ['admin', 'broadcasts', 'filters'],
@@ -164,21 +151,17 @@ export default function AdminBroadcastCreate() {
     queryFn: adminBroadcastsApi.getEmailFilters,
     enabled: emailEnabled,
   });
+  const { data: emailTariffsData, isLoading: emailTariffsLoading } = useQuery({
+    queryKey: ['admin', 'broadcasts', 'tariffs'],
+    queryFn: adminBroadcastsApi.getTariffs,
+    enabled: emailEnabled,
+  });
 
   // Fetch buttons
   const { data: buttonsData } = useQuery({
     queryKey: ['admin', 'broadcasts', 'buttons'],
     queryFn: adminBroadcastsApi.getButtons,
     enabled: telegramEnabled,
-  });
-
-  // Preview mutations — separate for each channel
-  const telegramPreviewMutation = useMutation({
-    mutationFn: adminBroadcastsApi.preview,
-  });
-
-  const emailPreviewMutation = useMutation({
-    mutationFn: adminBroadcastsApi.previewEmail,
   });
 
   // Create mutation (used for single-channel sends)
@@ -190,84 +173,15 @@ export default function AdminBroadcastCreate() {
     },
   });
 
-  // Group Telegram filters
-  const groupedTelegramFilters = useMemo(() => {
-    if (!filtersData) return {};
-    const groups: Record<string, (BroadcastFilter | TariffFilter)[]> = {};
-
-    filtersData.filters.forEach((f) => {
-      const group = f.group || 'basic';
-      if (!groups[group]) groups[group] = [];
-      groups[group].push(f);
-    });
-
-    if (filtersData.tariff_filters.length > 0) {
-      groups['tariff'] = filtersData.tariff_filters;
-    }
-
-    filtersData.custom_filters.forEach((f) => {
-      const group = f.group || 'custom';
-      if (!groups[group]) groups[group] = [];
-      groups[group].push(f);
-    });
-
-    return groups;
-  }, [filtersData]);
-
-  // Group Email filters
-  const groupedEmailFilters = useMemo(() => {
-    if (!emailFiltersData) return {};
-    const groups: Record<string, BroadcastFilter[]> = {};
-
-    emailFiltersData.filters.forEach((f) => {
-      const group = f.group || 'email';
-      if (!groups[group]) groups[group] = [];
-      groups[group].push(f);
-    });
-
-    return groups;
-  }, [emailFiltersData]);
-
-  // Selected filter info for each channel
-  const selectedTelegramFilter = useMemo(() => {
-    if (!telegramTarget || !filtersData) return null;
-    const all = [
-      ...filtersData.filters,
-      ...filtersData.tariff_filters,
-      ...filtersData.custom_filters,
-    ];
-    return all.find((f) => f.key === telegramTarget) ?? null;
-  }, [telegramTarget, filtersData]);
-
-  const selectedEmailFilter = useMemo(() => {
-    if (!emailTarget || !emailFiltersData) return null;
-    return emailFiltersData.filters.find((f) => f.key === emailTarget) ?? null;
-  }, [emailTarget, emailFiltersData]);
-
   // Handle toggling channels
   const handleToggleTelegram = () => {
     setTelegramEnabled((prev) => !prev);
-    setTelegramTarget('');
-    telegramPreviewMutation.reset();
+    setTelegramAudience(emptyAudience());
   };
 
   const handleToggleEmail = () => {
     setEmailEnabled((prev) => !prev);
-    setEmailTarget('');
-    emailPreviewMutation.reset();
-  };
-
-  // Handle filter selection per channel
-  const handleTelegramFilterSelect = (filterKey: string) => {
-    setTelegramTarget(filterKey);
-    setShowTelegramFilters(false);
-    telegramPreviewMutation.mutate(filterKey);
-  };
-
-  const handleEmailFilterSelect = (filterKey: string) => {
-    setEmailTarget(filterKey);
-    setShowEmailFilters(false);
-    emailPreviewMutation.mutate(filterKey);
+    setEmailAudience(emptyAudience());
   };
 
   // Handle file selection
@@ -275,28 +189,33 @@ export default function AdminBroadcastCreate() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setMediaFile(file);
-
+    // Determine type locally to avoid stale state in async call
+    let detectedType: 'photo' | 'video' | 'document';
     if (file.type.startsWith('image/')) {
-      setMediaType('photo');
+      detectedType = 'photo';
+    } else if (file.type.startsWith('video/')) {
+      detectedType = 'video';
+    } else {
+      detectedType = 'document';
+    }
+
+    setMediaFile(file);
+    setMediaType(detectedType);
+
+    if (detectedType === 'photo') {
       if (mediaPreviewRef.current) URL.revokeObjectURL(mediaPreviewRef.current);
       const url = URL.createObjectURL(file);
       mediaPreviewRef.current = url;
       setMediaPreview(url);
-    } else if (file.type.startsWith('video/')) {
-      setMediaType('video');
-      setMediaPreview(null);
     } else {
-      setMediaType('document');
       setMediaPreview(null);
     }
 
     setIsUploading(true);
     try {
-      const result = await adminBroadcastsApi.uploadMedia(file, mediaType);
+      const result = await adminBroadcastsApi.uploadMedia(file, detectedType);
       setUploadedFileId(result.file_id);
-    } catch (err) {
-      console.error('Upload failed:', err);
+    } catch {
       setMediaFile(null);
       setMediaPreview(null);
     } finally {
@@ -325,10 +244,52 @@ export default function AdminBroadcastCreate() {
     );
   };
 
+  // Custom button validation
+  const isNewButtonValid = useMemo(() => {
+    if (!newButtonLabel.trim() || !newButtonActionValue.trim()) return false;
+    // custom_emoji_id — необязательное поле, но если задано — числовая строка (Bot API)
+    if (newButtonEmojiId.trim() && !/^\d{1,64}$/.test(newButtonEmojiId.trim())) return false;
+    if (newButtonActionType === 'url') {
+      return /^https:\/\/|^tg:\/\//.test(newButtonActionValue.trim());
+    }
+    if (newButtonActionType === 'callback') {
+      return new TextEncoder().encode(newButtonActionValue.trim()).length <= 64;
+    }
+    return true;
+  }, [newButtonLabel, newButtonActionType, newButtonActionValue, newButtonEmojiId]);
+
+  // Custom button handlers
+  const addCustomButton = () => {
+    if (!isNewButtonValid) return;
+    const emojiId = newButtonEmojiId.trim();
+    setCustomButtons((prev) => [
+      ...prev,
+      {
+        label: newButtonLabel.trim(),
+        action_type: newButtonActionType,
+        action_value: newButtonActionValue.trim(),
+        ...(emojiId ? { icon_custom_emoji_id: emojiId } : {}),
+      },
+    ]);
+    setNewButtonLabel('');
+    setNewButtonActionValue('');
+    setNewButtonActionType('callback');
+    setNewButtonEmojiId('');
+    setIsAddingCustomButton(false);
+  };
+
+  const removeCustomButton = (index: number) => {
+    setCustomButtons((prev) => prev.filter((_, i) => i !== index));
+  };
+
   // Validate form
-  const isTelegramValid = telegramEnabled && telegramTarget && messageText.trim().length > 0;
+  const isTelegramValid =
+    telegramEnabled && isAudienceComplete(telegramAudience) && messageText.trim().length > 0;
   const isEmailValid =
-    emailEnabled && emailTarget && emailSubject.trim().length > 0 && emailContent.trim().length > 0;
+    emailEnabled &&
+    isAudienceComplete(emailAudience) &&
+    emailSubject.trim().length > 0 &&
+    emailContent.trim().length > 0;
 
   const isValid = useMemo(() => {
     if (!telegramEnabled && !emailEnabled) return false;
@@ -347,9 +308,11 @@ export default function AdminBroadcastCreate() {
     if (telegramEnabled && !emailEnabled) {
       const data: CombinedBroadcastCreateRequest = {
         channel: 'telegram',
-        target: telegramTarget,
+        audience: telegramAudience,
         message_text: messageText,
         selected_buttons: selectedButtons,
+        custom_buttons: customButtons.length > 0 ? customButtons : undefined,
+        category,
       };
       if (uploadedFileId) {
         data.media = { type: mediaType, file_id: uploadedFileId };
@@ -361,9 +324,10 @@ export default function AdminBroadcastCreate() {
     if (emailEnabled && !telegramEnabled) {
       const data: CombinedBroadcastCreateRequest = {
         channel: 'email',
-        target: emailTarget,
+        audience: emailAudience,
         email_subject: emailSubject,
         email_html_content: emailContent,
+        category,
       };
       createMutation.mutate(data);
       return;
@@ -374,9 +338,11 @@ export default function AdminBroadcastCreate() {
     try {
       const telegramData: CombinedBroadcastCreateRequest = {
         channel: 'telegram',
-        target: telegramTarget,
+        audience: telegramAudience,
         message_text: messageText,
         selected_buttons: selectedButtons,
+        custom_buttons: customButtons.length > 0 ? customButtons : undefined,
+        category,
       };
       if (uploadedFileId) {
         telegramData.media = { type: mediaType, file_id: uploadedFileId };
@@ -384,9 +350,10 @@ export default function AdminBroadcastCreate() {
 
       const emailData: CombinedBroadcastCreateRequest = {
         channel: 'email',
-        target: emailTarget,
+        audience: emailAudience,
         email_subject: emailSubject,
         email_html_content: emailContent,
+        category,
       };
 
       await adminBroadcastsApi.createCombined(telegramData);
@@ -399,90 +366,7 @@ export default function AdminBroadcastCreate() {
     }
   };
 
-  // Recipients counts per channel
-  const telegramRecipientsCount = telegramEnabled
-    ? (telegramPreviewMutation.data?.count ?? selectedTelegramFilter?.count ?? null)
-    : null;
-
-  const emailRecipientsCount = emailEnabled
-    ? (emailPreviewMutation.data?.count ?? selectedEmailFilter?.count ?? null)
-    : null;
-
   const isPending = createMutation.isPending || isSubmitting;
-
-  // Render filter dropdown
-  const renderFilterDropdown = (
-    channelType: 'telegram' | 'email',
-    target: string,
-    selectedFilter: BroadcastFilter | TariffFilter | null,
-    recipientsCount: number | null,
-    showFilters: boolean,
-    setShowFilters: (v: boolean) => void,
-    handleFilterSelect: (key: string) => void,
-    groupedFilters: Record<string, (BroadcastFilter | TariffFilter)[]>,
-    isLoading: boolean,
-  ) => (
-    <div>
-      <label className="mb-2 block text-sm font-medium text-dark-300">
-        {channelType === 'telegram'
-          ? t('admin.broadcasts.selectFilter')
-          : t('admin.broadcasts.selectEmailFilter')}
-      </label>
-      <div className="relative">
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          className="flex w-full items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-3 text-left transition-colors hover:border-dark-600"
-        >
-          <div className="flex items-center gap-2">
-            <UsersIcon />
-            <span className={selectedFilter ? 'text-dark-100' : 'text-dark-400'}>
-              {selectedFilter
-                ? selectedFilter.label
-                : channelType === 'telegram'
-                  ? t('admin.broadcasts.selectFilterPlaceholder')
-                  : t('admin.broadcasts.selectEmailFilterPlaceholder')}
-            </span>
-            {recipientsCount !== null && (
-              <span className="rounded-full bg-accent-500/20 px-2 py-0.5 text-xs text-accent-400">
-                {recipientsCount} {t('admin.broadcasts.recipients')}
-              </span>
-            )}
-          </div>
-          <ChevronDownIcon />
-        </button>
-
-        {showFilters && (
-          <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-lg border border-dark-700 bg-dark-800 shadow-xl">
-            {isLoading ? (
-              <div className="p-4 text-center text-dark-400">{t('common.loading')}</div>
-            ) : (
-              Object.entries(groupedFilters).map(([group, filters]) => (
-                <div key={group}>
-                  <div className="sticky top-0 bg-dark-900 px-3 py-2 text-xs font-medium text-dark-400">
-                    {FILTER_GROUP_LABEL_KEYS[group] ? t(FILTER_GROUP_LABEL_KEYS[group]) : group}
-                  </div>
-                  {filters.map((filter) => (
-                    <button
-                      key={filter.key}
-                      onClick={() => handleFilterSelect(filter.key)}
-                      className={`flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-dark-700 ${
-                        target === filter.key ? 'bg-accent-500/20' : ''
-                      }`}
-                    >
-                      <span className="text-dark-100">{filter.label}</span>
-                      {filter.count !== null && filter.count !== undefined && (
-                        <span className="text-xs text-dark-400">{filter.count}</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
 
   return (
     <div className="space-y-6">
@@ -491,7 +375,7 @@ export default function AdminBroadcastCreate() {
         <AdminBackButton />
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-accent-500/20 p-2 text-accent-400">
-            <BroadcastIcon />
+            <BroadcastIcon className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-xl font-bold text-dark-100">{t('admin.broadcasts.create')}</h1>
@@ -537,25 +421,70 @@ export default function AdminBroadcastCreate() {
         )}
       </div>
 
+      {/* Broadcast category */}
+      <div className="card">
+        <label className="mb-3 block text-sm font-medium text-dark-300">
+          {t('admin.broadcasts.category', 'Категория рассылки')}
+        </label>
+        <p className="mb-3 text-xs text-dark-500">
+          {t(
+            'admin.broadcasts.categoryDesc',
+            'Пользователи могут отключить получение новостей и промо в настройках профиля. Системные рассылки доставляются всем.',
+          )}
+        </p>
+        <div className="flex gap-3">
+          {(['system', 'news', 'promo'] as const).map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setCategory(cat)}
+              className={`flex-1 rounded-lg border p-3 text-sm font-medium transition-all ${
+                category === cat
+                  ? 'border-accent-500 bg-accent-500/10 text-accent-400'
+                  : 'border-dark-700 bg-dark-800 text-dark-300 hover:border-dark-600'
+              }`}
+            >
+              {cat === 'system' && t('admin.broadcasts.categorySystem', '⚙️ Системное')}
+              {cat === 'news' && t('admin.broadcasts.categoryNews', '📰 Новости')}
+              {cat === 'promo' && t('admin.broadcasts.categoryPromo', '🎁 Промо')}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Telegram section */}
       {telegramEnabled && (
         <div className="card space-y-6">
-          <h2 className="text-lg font-semibold text-dark-100">
-            {t('admin.broadcasts.telegramSection')}
-          </h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-dark-100">
+              {t('admin.broadcasts.telegramSection')}
+            </h2>
+            <button
+              type="button"
+              onClick={() => setShowTelegramPreview(true)}
+              disabled={messageText.trim().length === 0}
+              className="rounded-lg border border-dark-700 bg-dark-800 px-3 py-1.5 text-sm text-dark-300 transition-colors hover:border-dark-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t('admin.broadcasts.preview', 'Предпросмотр')}
+            </button>
+          </div>
 
           {/* Telegram filter selection */}
-          {renderFilterDropdown(
-            'telegram',
-            telegramTarget,
-            selectedTelegramFilter,
-            telegramRecipientsCount,
-            showTelegramFilters,
-            setShowTelegramFilters,
-            handleTelegramFilterSelect,
-            groupedTelegramFilters,
-            filtersLoading,
-          )}
+          <BroadcastAudienceEditor
+            channel="telegram"
+            category={category}
+            audience={telegramAudience}
+            onChange={setTelegramAudience}
+            filters={
+              filtersData
+                ? [
+                    ...filtersData.filters,
+                    ...filtersData.tariff_filters,
+                    ...filtersData.custom_filters,
+                  ]
+                : []
+            }
+            isLoading={filtersLoading}
+          />
 
           {/* Message text */}
           <div>
@@ -597,7 +526,7 @@ export default function AdminBroadcastCreate() {
                     className="rounded-lg p-2 text-dark-400 hover:bg-dark-700 hover:text-error-400"
                     disabled={isUploading}
                   >
-                    <XIcon />
+                    <XIcon className="h-5 w-5" />
                   </button>
                 </div>
                 {mediaPreview && (
@@ -646,7 +575,7 @@ export default function AdminBroadcastCreate() {
                   onClick={() => toggleButton(button.key)}
                   className={`rounded-lg px-3 py-2 text-sm transition-colors ${
                     selectedButtons.includes(button.key)
-                      ? 'bg-accent-500 text-white'
+                      ? 'bg-accent-500 text-on-accent'
                       : 'border border-dark-700 bg-dark-800 text-dark-300 hover:bg-dark-700'
                   }`}
                 >
@@ -655,28 +584,171 @@ export default function AdminBroadcastCreate() {
               ))}
             </div>
           </div>
+
+          {/* Custom buttons */}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-dark-300">
+              {t('admin.broadcasts.customButtons')}
+            </label>
+
+            {/* Existing custom buttons */}
+            {customButtons.length > 0 && (
+              <div className="mb-3 space-y-2">
+                {customButtons.map((btn, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <span className="shrink-0 rounded bg-dark-700 px-1.5 py-0.5 text-xs text-dark-400">
+                        {btn.action_type === 'url'
+                          ? t('admin.broadcasts.customButtonTypeUrl')
+                          : t('admin.broadcasts.customButtonTypeCallback')}
+                      </span>
+                      <span className="truncate text-sm text-dark-100">{btn.label}</span>
+                      <span className="truncate text-xs text-dark-500">{btn.action_value}</span>
+                    </div>
+                    <button
+                      onClick={() => removeCustomButton(index)}
+                      className="ml-2 shrink-0 rounded p-1 text-dark-400 hover:bg-dark-700 hover:text-error-400"
+                    >
+                      <XIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Inline add form */}
+            {isAddingCustomButton ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  addCustomButton();
+                }}
+                className="space-y-3 rounded-lg border border-dark-600 bg-dark-800/50 p-3"
+              >
+                <input
+                  type="text"
+                  value={newButtonLabel}
+                  onChange={(e) => setNewButtonLabel(e.target.value)}
+                  placeholder={t('admin.broadcasts.customButtonLabelPlaceholder')}
+                  maxLength={64}
+                  className="input"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewButtonActionType('callback')}
+                    className={`flex-1 rounded-lg px-3 py-2 text-sm transition-colors ${
+                      newButtonActionType === 'callback'
+                        ? 'bg-accent-500 text-on-accent'
+                        : 'border border-dark-700 bg-dark-800 text-dark-300 hover:bg-dark-700'
+                    }`}
+                  >
+                    {t('admin.broadcasts.customButtonTypeCallback')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewButtonActionType('url')}
+                    className={`flex-1 rounded-lg px-3 py-2 text-sm transition-colors ${
+                      newButtonActionType === 'url'
+                        ? 'bg-accent-500 text-on-accent'
+                        : 'border border-dark-700 bg-dark-800 text-dark-300 hover:bg-dark-700'
+                    }`}
+                  >
+                    {t('admin.broadcasts.customButtonTypeUrl')}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={newButtonActionValue}
+                  onChange={(e) => setNewButtonActionValue(e.target.value)}
+                  placeholder={
+                    newButtonActionType === 'url'
+                      ? t('admin.broadcasts.customButtonUrlPlaceholder')
+                      : t('admin.broadcasts.customButtonCallbackPlaceholder')
+                  }
+                  maxLength={newButtonActionType === 'callback' ? 64 : 256}
+                  className="input"
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={newButtonEmojiId}
+                  onChange={(e) => setNewButtonEmojiId(e.target.value)}
+                  placeholder={t('admin.broadcasts.customButtonEmojiIdPlaceholder')}
+                  maxLength={64}
+                  className="input"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddingCustomButton(false);
+                      setNewButtonLabel('');
+                      setNewButtonActionValue('');
+                      setNewButtonEmojiId('');
+                    }}
+                    className="btn-secondary flex-1"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button type="submit" disabled={!isNewButtonValid} className="btn-primary flex-1">
+                    {t('common.add')}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button
+                onClick={() => setIsAddingCustomButton(true)}
+                disabled={customButtons.length >= 10}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-dark-600 bg-dark-800/50 px-4 py-3 text-sm text-dark-400 transition-colors hover:border-dark-500 hover:bg-dark-800 hover:text-dark-300"
+              >
+                <span>+</span>
+                <span>{t('admin.broadcasts.addCustomButton')}</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {/* Email section */}
       {emailEnabled && (
         <div className="card space-y-6">
-          <h2 className="text-lg font-semibold text-dark-100">
-            {t('admin.broadcasts.emailSection')}
-          </h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-dark-100">
+              {t('admin.broadcasts.emailSection')}
+            </h2>
+            <button
+              type="button"
+              onClick={() => setShowEmailPreview(true)}
+              disabled={emailContent.trim().length === 0}
+              className="rounded-lg border border-dark-700 bg-dark-800 px-3 py-1.5 text-sm text-dark-300 transition-colors hover:border-dark-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t('admin.broadcasts.preview', 'Предпросмотр')}
+            </button>
+          </div>
 
           {/* Email filter selection */}
-          {renderFilterDropdown(
-            'email',
-            emailTarget,
-            selectedEmailFilter,
-            emailRecipientsCount,
-            showEmailFilters,
-            setShowEmailFilters,
-            handleEmailFilterSelect,
-            groupedEmailFilters,
-            emailFiltersLoading,
-          )}
+          <BroadcastAudienceEditor
+            channel="email"
+            category={category}
+            audience={emailAudience}
+            onChange={setEmailAudience}
+            filters={[
+              ...(emailFiltersData?.filters || []),
+              ...(emailFiltersData?.promo_group_filters || []),
+              ...(emailTariffsData?.tariffs.map((tariff) => ({
+                key: tariff.filter_key,
+                label: tariff.name,
+                tariff_id: tariff.id,
+                count: tariff.active_users_count,
+              })) || []),
+            ]}
+            isLoading={emailFiltersLoading || emailTariffsLoading}
+          />
 
           {/* Email subject */}
           <div>
@@ -728,25 +800,7 @@ export default function AdminBroadcastCreate() {
       )}
 
       {/* Footer */}
-      <div className="card flex items-center justify-between">
-        <div className="text-sm text-dark-400">
-          {(telegramRecipientsCount !== null || emailRecipientsCount !== null) && (
-            <span>
-              {t('admin.broadcasts.willBeSent')}:{' '}
-              {telegramRecipientsCount !== null && (
-                <>
-                  <strong className="text-accent-400">{telegramRecipientsCount}</strong> (TG)
-                </>
-              )}
-              {telegramRecipientsCount !== null && emailRecipientsCount !== null && ' + '}
-              {emailRecipientsCount !== null && (
-                <>
-                  <strong className="text-accent-400">{emailRecipientsCount}</strong> (Email)
-                </>
-              )}
-            </span>
-          )}
-        </div>
+      <div className="card flex items-center justify-end">
         <div className="flex gap-3">
           <button onClick={() => navigate('/admin/broadcasts')} className="btn-secondary">
             {t('common.cancel')}
@@ -756,11 +810,26 @@ export default function AdminBroadcastCreate() {
             disabled={!isValid || isPending || isUploading}
             className="btn-primary flex items-center gap-2"
           >
-            {isPending ? <RefreshIcon /> : <BroadcastIcon />}
+            {isPending ? <RefreshIcon /> : <BroadcastIcon className="h-6 w-6" />}
             {t('admin.broadcasts.send')}
           </button>
         </div>
       </div>
+
+      <TelegramPreview
+        open={showTelegramPreview}
+        onClose={() => setShowTelegramPreview(false)}
+        text={messageText}
+        mediaUrl={mediaPreview}
+        mediaType={previewMediaTypeForModal}
+        buttons={previewButtonRows}
+      />
+      <EmailPreview
+        open={showEmailPreview}
+        onClose={() => setShowEmailPreview(false)}
+        subject={emailSubject}
+        htmlContent={emailContent}
+      />
     </div>
   );
 }

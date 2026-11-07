@@ -6,26 +6,13 @@ import { useAuthStore } from '../store/auth';
 import { useShallow } from 'zustand/shallow';
 import { brandingApi } from '../api/branding';
 import { isInTelegramWebApp, getTelegramInitData } from '../hooks/useTelegramSDK';
-
-// Validate redirect URL to prevent open redirect attacks
-const getSafeRedirectUrl = (url: string | null): string => {
-  if (!url) return '/';
-  // Only allow relative paths starting with /
-  // Block protocol-relative URLs (//evil.com) and absolute URLs
-  if (!url.startsWith('/') || url.startsWith('//')) {
-    return '/';
-  }
-  // Additional check for encoded characters that could bypass validation
-  try {
-    const decoded = decodeURIComponent(url);
-    if (!decoded.startsWith('/') || decoded.startsWith('//') || decoded.includes('://')) {
-      return '/';
-    }
-  } catch {
-    return '/';
-  }
-  return url;
-};
+import { tokenStorage } from '../utils/token';
+import { getSafeRedirectPath } from '../utils/safeRedirect';
+import { CheckIcon, XIcon, ExclamationIcon } from '@/components/icons';
+import { safeLocal, safeSession } from '../utils/safeStorage';
+import { useLegalConsentGate } from '../hooks/useLegalConsentGate';
+import LegalConsentGate from '../components/LegalConsentGate';
+import { getApiErrorMessage } from '../utils/api-error';
 
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_COUNT_KEY = 'telegram_redirect_retry_count';
@@ -45,10 +32,13 @@ export default function TelegramRedirect() {
       isLoading: state.isLoading,
     })),
   );
-  const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'not-telegram'>('loading');
+  const [status, setStatus] = useState<
+    'loading' | 'success' | 'error' | 'not-telegram' | 'consent'
+  >('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  const consent = useLegalConsentGate();
   const [retryCount, setRetryCount] = useState(() => {
-    const stored = sessionStorage.getItem(RETRY_COUNT_KEY);
+    const stored = safeSession.getItem(RETRY_COUNT_KEY);
     return stored ? parseInt(stored, 10) : 0;
   });
 
@@ -64,14 +54,23 @@ export default function TelegramRedirect() {
   const logoUrl = branding ? brandingApi.getLogoUrl(branding) : null;
 
   // Get redirect target from URL params (validated)
-  const redirectTo = getSafeRedirectUrl(searchParams.get('redirect'));
+  const redirectTo = getSafeRedirectPath(searchParams.get('redirect'));
 
   useEffect(() => {
+    // All timers scheduled inside this effect funnel through `timers` so the
+    // cleanup can cancel everything when the effect re-runs (deps change
+    // during loginWithTelegram) or the page unmounts — preventing
+    // setState-on-unmounted-component warnings and stray late navigations.
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const schedule = (fn: () => void, ms: number) => {
+      timers.push(setTimeout(fn, ms));
+    };
+
     // If already authenticated, redirect immediately
     if (isAuthenticated && !authLoading) {
       setStatus('success');
-      setTimeout(() => navigate(redirectTo), 500);
-      return;
+      schedule(() => navigate(redirectTo), 500);
+      return () => timers.forEach(clearTimeout);
     }
 
     const initTelegram = async () => {
@@ -81,7 +80,7 @@ export default function TelegramRedirect() {
       if (!isInTelegramWebApp() || !initData) {
         // Not in Telegram, show message and redirect to login
         setStatus('not-telegram');
-        setTimeout(() => navigate('/login'), 2000);
+        schedule(() => navigate('/login'), 2000);
         return;
       }
 
@@ -90,33 +89,56 @@ export default function TelegramRedirect() {
       try {
         await loginWithTelegram(initData);
         setStatus('success');
-
         // Small delay for nice UX
-        setTimeout(() => {
-          navigate(redirectTo);
-        }, 800);
+        schedule(() => navigate(redirectTo), 800);
       } catch (err: unknown) {
+        // Новый пользователь без согласия: бэк ответил 428 — это не сбой входа,
+        // показываем чекбоксы и повторяем вход с теми же initData и галочками.
+        const needsConsent = consent.capture(err, async (accepted) => {
+          await loginWithTelegram(initData, accepted);
+          setStatus('success');
+          navigate(redirectTo);
+        });
+        if (needsConsent) {
+          setStatus('consent');
+          return;
+        }
         console.error('Telegram auth failed:', err);
-        const error = err as { response?: { data?: { detail?: string } } };
-        setErrorMessage(error.response?.data?.detail || t('auth.telegramRequired'));
+        setErrorMessage(getApiErrorMessage(err, t('auth.telegramRequired')));
         setStatus('error');
       }
     };
 
     // Small delay to show loading screen
-    setTimeout(initTelegram, 300);
-  }, [loginWithTelegram, navigate, isAuthenticated, authLoading, redirectTo, t]);
+    schedule(initTelegram, 300);
+
+    return () => timers.forEach(clearTimeout);
+  }, [loginWithTelegram, navigate, isAuthenticated, authLoading, redirectTo, t, consent.capture]);
 
   // Handle retry with limit to prevent infinite loops
   const handleRetry = () => {
     if (retryCount >= MAX_RETRY_ATTEMPTS) {
       setErrorMessage(t('telegramRedirect.maxRetries'));
-      sessionStorage.removeItem(RETRY_COUNT_KEY);
+      safeSession.removeItem(RETRY_COUNT_KEY);
       return;
     }
     const newCount = retryCount + 1;
     setRetryCount(newCount);
-    sessionStorage.setItem(RETRY_COUNT_KEY, String(newCount));
+    // Счётчик читается после reload, поэтому память тут не считается: если
+    // сохранить некуда, лимит попыток не сработает никогда и пользователь
+    // останется крутить перезагрузку. Тогда сразу говорим, что попытки исчерпаны.
+    if (!safeSession.setItem(RETRY_COUNT_KEY, String(newCount))) {
+      setErrorMessage(t('telegramRedirect.maxRetries'));
+      return;
+    }
+
+    // Clear all cached auth state to prevent stale token/initData loops
+    tokenStorage.clearTokens();
+    safeSession.removeItem('tapps/launchParams');
+    safeSession.removeItem('telegram_init_data');
+    safeLocal.removeItem('cabinet-auth');
+    safeLocal.removeItem('tg_user_id');
+
     setStatus('loading');
     setErrorMessage('');
     window.location.reload();
@@ -125,12 +147,12 @@ export default function TelegramRedirect() {
   // Clear retry count on successful auth
   useEffect(() => {
     if (status === 'success') {
-      sessionStorage.removeItem(RETRY_COUNT_KEY);
+      safeSession.removeItem(RETRY_COUNT_KEY);
     }
   }, [status]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="min-h-viewport flex items-center justify-center p-4">
       {/* Background */}
       <div className="fixed inset-0 bg-gradient-to-br from-dark-950 via-dark-900 to-dark-950" />
       <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-accent-500/10 via-transparent to-transparent" />
@@ -160,15 +182,7 @@ export default function TelegramRedirect() {
         {status === 'success' && (
           <div className="mt-8">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-success-500/20">
-              <svg
-                className="h-8 w-8 text-success-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
+              <CheckIcon className="h-8 w-8 text-success-400" />
             </div>
             <p className="text-dark-200">{t('auth.loginSuccess')}</p>
             <p className="mt-2 text-sm text-dark-500">{t('telegramRedirect.redirecting')}</p>
@@ -179,15 +193,7 @@ export default function TelegramRedirect() {
         {status === 'error' && (
           <div className="mt-8">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-error-500/20">
-              <svg
-                className="h-8 w-8 text-error-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <XIcon className="h-8 w-8 text-error-400" />
             </div>
             <p className="mb-2 text-dark-200">{t('auth.loginFailed')}</p>
             <p className="mb-6 text-sm text-error-400">{errorMessage}</p>
@@ -202,23 +208,18 @@ export default function TelegramRedirect() {
           </div>
         )}
 
+        {/* Consent State: аккаунт новый, бэк ждёт галочки «ознакомлен» */}
+        {status === 'consent' && (
+          <div className="mt-8 text-left">
+            <LegalConsentGate gate={consent} />
+          </div>
+        )}
+
         {/* Not in Telegram State */}
         {status === 'not-telegram' && (
           <div className="mt-8">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning-500/20">
-              <svg
-                className="h-8 w-8 text-warning-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
-                />
-              </svg>
+              <ExclamationIcon className="h-8 w-8 text-warning-400" />
             </div>
             <p className="mb-2 text-dark-200">{t('telegramRedirect.openInTelegram')}</p>
             <p className="mb-6 text-sm text-dark-400">{t('telegramRedirect.openInTelegramDesc')}</p>

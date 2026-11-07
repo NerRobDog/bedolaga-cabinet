@@ -4,44 +4,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   promocodesApi,
-  PromoGroup,
-  PromoGroupCreateRequest,
-  PromoGroupUpdateRequest,
+  type PromoGroup,
+  type PromoGroupCreateRequest,
+  type PromoGroupUpdateRequest,
 } from '../api/promocodes';
 import { AdminBackButton } from '../components/admin';
-
-// Icons
-const PlusIcon = () => (
-  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-  </svg>
-);
-
-const TrashIcon = () => (
-  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-    />
-  </svg>
-);
-
-const RefreshIcon = () => (
-  <svg
-    className="h-4 w-4 animate-spin"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-    />
-  </svg>
-);
+import { PlusIcon, RefreshIcon, TrashIcon } from '@/components/icons';
+import { PageSkeleton, Skeleton } from '@/components/ui/skeleton';
 
 interface PeriodDiscount {
   days: number | '';
@@ -61,6 +30,7 @@ export default function AdminPromoGroupCreate() {
   const [trafficDiscount, setTrafficDiscount] = useState<number | ''>(0);
   const [deviceDiscount, setDeviceDiscount] = useState<number | ''>(0);
   const [applyToAddons, setApplyToAddons] = useState(true);
+  const [isDefault, setIsDefault] = useState(false);
   const [autoAssignSpent, setAutoAssignSpent] = useState<number | ''>(0);
   const [periodDiscounts, setPeriodDiscounts] = useState<PeriodDiscount[]>([]);
 
@@ -79,6 +49,7 @@ export default function AdminPromoGroupCreate() {
       setTrafficDiscount(data.traffic_discount_percent || 0);
       setDeviceDiscount(data.device_discount_percent || 0);
       setApplyToAddons(data.apply_discounts_to_addons ?? true);
+      setIsDefault(data.is_default ?? false);
       setAutoAssignSpent(
         data.auto_assign_total_spent_kopeks ? data.auto_assign_total_spent_kopeks / 100 : 0,
       );
@@ -133,7 +104,7 @@ export default function AdminPromoGroupCreate() {
     periodDiscounts.forEach((pd) => {
       const days = pd.days === '' ? 0 : pd.days;
       const percent = pd.percent === '' ? 0 : pd.percent;
-      if (days > 0 && percent > 0) {
+      if (days > 0 && percent >= 0) {
         periodDiscountsRecord[days] = percent;
       }
     });
@@ -148,10 +119,10 @@ export default function AdminPromoGroupCreate() {
       server_discount_percent: serverVal,
       traffic_discount_percent: trafficVal,
       device_discount_percent: deviceVal,
-      period_discounts:
-        Object.keys(periodDiscountsRecord).length > 0 ? periodDiscountsRecord : undefined,
+      period_discounts: periodDiscountsRecord,
       apply_discounts_to_addons: applyToAddons,
-      auto_assign_total_spent_kopeks: autoAssignVal > 0 ? Math.round(autoAssignVal * 100) : null,
+      auto_assign_total_spent_kopeks: autoAssignVal > 0 ? Math.round(autoAssignVal * 100) : 0,
+      is_default: isDefault,
     };
 
     if (isEdit) {
@@ -167,9 +138,9 @@ export default function AdminPromoGroupCreate() {
   // Loading state
   if (isEdit && isLoadingGroup) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-      </div>
+      <PageSkeleton variant="admin" leading={1} titleWidth="w-56" className="space-y-6">
+        <Skeleton variant="card" className="h-96" />
+      </PageSkeleton>
     );
   }
 
@@ -190,11 +161,12 @@ export default function AdminPromoGroupCreate() {
       <div className="card space-y-4">
         {/* Name */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-dark-300">
+          <label htmlFor="pg-name" className="mb-2 block text-sm font-medium text-dark-300">
             {t('admin.promoGroups.form.name')}
             <span className="text-error-400">*</span>
           </label>
           <input
+            id="pg-name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -316,7 +288,9 @@ export default function AdminPromoGroupCreate() {
                     min={1}
                     placeholder={t('admin.promoGroups.form.daysPlaceholder')}
                   />
-                  <span className="text-xs text-dark-400">{t('admin.promoGroups.form.arrow')}</span>
+                  <span className="shrink-0 whitespace-nowrap text-xs text-dark-400">
+                    {t('admin.promoGroups.form.arrow')}
+                  </span>
                   <input
                     type="number"
                     value={pd.percent}
@@ -337,7 +311,7 @@ export default function AdminPromoGroupCreate() {
                     onClick={() => removePeriodDiscount(index)}
                     className="p-1 text-dark-400 transition-colors hover:text-error-400"
                   >
-                    <TrashIcon />
+                    <TrashIcon className="h-4 w-4" />
                   </button>
                 </div>
               ))}
@@ -347,11 +321,12 @@ export default function AdminPromoGroupCreate() {
 
         {/* Auto-assign */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-dark-300">
+          <label htmlFor="pg-auto-assign" className="mb-2 block text-sm font-medium text-dark-300">
             {t('admin.promoGroups.form.autoAssign')}
           </label>
           <div className="flex items-center gap-2">
             <input
+              id="pg-auto-assign"
               type="number"
               value={autoAssignSpent}
               onChange={(e) => {
@@ -376,6 +351,9 @@ export default function AdminPromoGroupCreate() {
           <button
             type="button"
             onClick={() => setApplyToAddons(!applyToAddons)}
+            role="switch"
+            aria-checked={applyToAddons}
+            aria-label={t('admin.promoGroups.form.applyToAddons')}
             className={`relative h-6 w-11 rounded-full transition-colors ${
               applyToAddons ? 'bg-accent-500' : 'bg-dark-600'
             }`}
@@ -387,6 +365,27 @@ export default function AdminPromoGroupCreate() {
             />
           </button>
           <span className="text-sm text-dark-200">{t('admin.promoGroups.form.applyToAddons')}</span>
+        </label>
+
+        {/* Default group */}
+        <label className="flex cursor-pointer items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setIsDefault(!isDefault)}
+            role="switch"
+            aria-checked={isDefault}
+            aria-label={t('admin.promoGroups.form.isDefault')}
+            className={`relative h-6 w-11 rounded-full transition-colors ${
+              isDefault ? 'bg-accent-500' : 'bg-dark-600'
+            }`}
+          >
+            <span
+              className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${
+                isDefault ? 'left-6' : 'left-1'
+              }`}
+            />
+          </button>
+          <span className="text-sm text-dark-200">{t('admin.promoGroups.form.isDefault')}</span>
         </label>
       </div>
 
@@ -401,7 +400,7 @@ export default function AdminPromoGroupCreate() {
             disabled={!isValid || isLoading}
             className="btn-primary flex items-center gap-2"
           >
-            {isLoading && <RefreshIcon />}
+            {isLoading && <RefreshIcon spinning />}
             {isLoading ? t('admin.promoGroups.form.saving') : t('admin.promoGroups.form.save')}
           </button>
         </div>

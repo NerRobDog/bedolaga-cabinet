@@ -1,13 +1,13 @@
 # Bedolaga Cabinet - Web Interface
 
-Веб-интерфейс личного кабинета для VPN бота на базе [Remnawave Bedolaga Telegram Bot V3.0.0+](https://github.com/BEDOLAGA-DEV/remnawave-bedolaga-telegram-bot).
+Веб-интерфейс личного кабинета для VPN бота на базе [Remnawave Bedolaga Telegram Bot v3.33.0+](https://github.com/BEDOLAGA-DEV/remnawave-bedolaga-telegram-bot).
 
 React + Vite + TypeScript | Авторизация через Telegram | Мультиязычность (EN/RU) | Адаптивный дизайн
 
 ## Требования
 
 - Docker и Docker Compose
-- Запущенный backend бота с включенным Cabinet API
+- Запущенный backend бота с включенным Cabinet API, версия **v3.33.0 или новее** — авторизация кабинета использует deep-link эндпоинты (`/cabinet/auth/deeplink/*`), которых нет в более старых версиях. На старом боте кабинет не сможет авторизовать пользователей (залоченные теги вроде `:3` не подходят — используйте `:latest` или конкретный тег ≥ 3.33.0)
 - Обратный прокси (Caddy / Nginx / Traefik)
 
 ## Архитектура
@@ -53,7 +53,8 @@ docker pull ghcr.io/bedolaga-dev/bedolaga-cabinet:latest
 ```bash
 # Создать временный контейнер и скопировать статику
 docker create --name tmp_cabinet ghcr.io/bedolaga-dev/bedolaga-cabinet:latest
-docker cp tmp_cabinet:/usr/share/nginx/html ./cabinet-dist
+mkdir -p ./cabinet-dist
+docker cp tmp_cabinet:/usr/share/nginx/html/. ./cabinet-dist/
 docker rm tmp_cabinet
 ```
 
@@ -77,10 +78,11 @@ VITE_APP_LOGO=V
 Соберите и извлеките:
 
 ```bash
-docker compose build
-docker create --name tmp_cabinet cabinet_frontend
-docker cp tmp_cabinet:/usr/share/nginx/html ./cabinet-dist
-docker rm tmp_cabinet
+docker compose build cabinet-frontend
+docker compose create cabinet-frontend
+mkdir -p ./cabinet-dist
+docker cp cabinet_frontend:/usr/share/nginx/html/. ./cabinet-dist/
+docker compose rm -sf cabinet-frontend
 ```
 
 ### Шаг 3. Размещение файлов на сервере
@@ -238,6 +240,15 @@ https://cabinet.example.com {
 | `VITE_TELEGRAM_BOT_USERNAME` | Username Telegram бота (без @) | — |
 | `VITE_APP_NAME` | Название в шапке и вкладке браузера | `Cabinet` |
 | `VITE_APP_LOGO` | Текст логотипа (1-2 символа) | `V` |
+
+Название из админки бота кабинет подтягивает сам, ещё до загрузки приложения
+(запросом `/cabinet/branding` из шапки страницы), а фавикон вкладки ведёт на
+`/cabinet/branding/favicon` бота (логотип из админки скруглённой плиткой или
+монограмма, всегда PNG) — так его видит и Safari, который не замечает смену
+иконки через JS и рисует SVG-иконки монохромной плиткой. Поэтому готовый образ
+с зашитым `Cabinet` показывает ваш бренд без пересборки. `VITE_APP_NAME` — только
+значение на те доли секунды, пока API не ответил; `VITE_APP_LOGO` — буква
+монограммы в интерфейсе, пока логотип не загружен.
 
 ### Runtime (только для Docker контейнера)
 

@@ -8,6 +8,12 @@ export interface AdminTicketUser {
   last_name: string | null;
 }
 
+export interface AdminTicketMediaItem {
+  type: 'photo' | 'video' | 'document';
+  file_id: string;
+  caption?: string | null;
+}
+
 export interface AdminTicketMessage {
   id: number;
   message_text: string;
@@ -16,6 +22,7 @@ export interface AdminTicketMessage {
   media_type: string | null;
   media_file_id: string | null;
   media_caption: string | null;
+  media_items?: AdminTicketMediaItem[] | null;
   created_at: string;
 }
 
@@ -30,6 +37,30 @@ export interface AdminTicket {
   messages_count: number;
   user: AdminTicketUser | null;
   last_message: AdminTicketMessage | null;
+}
+
+export interface AssistFact {
+  icon: string;
+  text: string;
+}
+
+export interface AssistCard {
+  id: number;
+  created_at: string;
+  status: string;
+  decided: boolean;
+  no_model: boolean;
+  facts: AssistFact[];
+  cause: string | null;
+  owner_action: string | null;
+  ask_client: string[];
+  draft: string | null;
+}
+
+export interface TicketAssist {
+  card: AssistCard | null;
+  can_send: boolean;
+  diagnostics: { label: string; value: string }[] | null;
 }
 
 export interface AdminTicketDetail {
@@ -61,6 +92,8 @@ export interface TicketSettings {
   support_system_mode: string; // tickets, contact, both
   cabinet_user_notifications_enabled: boolean;
   cabinet_admin_notifications_enabled: boolean;
+  /** Поля, закреплённые в .env: из кабинета их не изменить. */
+  env_locked?: string[];
 }
 
 export interface TicketSettingsUpdate {
@@ -114,9 +147,47 @@ export const adminApi = {
     return response.data;
   },
 
+  // Support assistant card for the ticket
+  getTicketAssist: async (ticketId: number): Promise<TicketAssist> => {
+    const response = await apiClient.get(`/cabinet/admin/tickets/${ticketId}/assist`);
+    return response.data;
+  },
+
+  // Send the assistant draft (or an edited text) to the client
+  sendAssistDraft: async (
+    ticketId: number,
+    cardId: number,
+    text?: string,
+  ): Promise<{ status: string }> => {
+    const response = await apiClient.post(
+      `/cabinet/admin/tickets/${ticketId}/assist/${cardId}/send`,
+      text === undefined ? {} : { text },
+    );
+    return response.data;
+  },
+
+  skipAssist: async (ticketId: number, cardId: number): Promise<{ status: string }> => {
+    const response = await apiClient.post(
+      `/cabinet/admin/tickets/${ticketId}/assist/${cardId}/skip`,
+    );
+    return response.data;
+  },
+
   // Reply to ticket
-  replyToTicket: async (ticketId: number, message: string): Promise<AdminTicketMessage> => {
-    const response = await apiClient.post(`/cabinet/admin/tickets/${ticketId}/reply`, { message });
+  replyToTicket: async (
+    ticketId: number,
+    message: string,
+    media?: {
+      media_type?: string;
+      media_file_id?: string;
+      media_caption?: string;
+      media_items?: AdminTicketMediaItem[];
+    },
+  ): Promise<AdminTicketMessage> => {
+    const response = await apiClient.post(`/cabinet/admin/tickets/${ticketId}/reply`, {
+      message,
+      ...media,
+    });
     return response.data;
   },
 
@@ -147,8 +218,6 @@ export const adminApi = {
   },
 };
 
-// ============ Dashboard Stats Types ============
-
 export interface NodeStatus {
   uuid: string;
   name: string;
@@ -157,15 +226,11 @@ export interface NodeStatus {
   is_disabled: boolean;
   users_online: number;
   traffic_used_bytes?: number;
-  uptime?: string;
-  xray_version?: string;
-  node_version?: string;
   last_status_message?: string;
-  xray_uptime?: string;
+  xray_uptime: number;
   is_xray_running?: boolean;
-  cpu_count?: number;
-  cpu_model?: string;
-  total_ram?: string;
+  versions?: { xray: string; node: string } | null;
+  system?: Record<string, unknown> | null;
   country_code?: string;
 }
 
@@ -239,12 +304,11 @@ export interface DashboardStats {
   tariff_stats?: TariffStats;
 }
 
-// ============ Extended Stats Types ============
-
 export interface TopReferrerItem {
   user_id: number;
-  telegram_id: number;
+  telegram_id: number | null;
   username?: string;
+  email?: string | null;
   display_name: string;
   invited_count: number;
   invited_today: number;
@@ -288,15 +352,16 @@ export interface TopCampaignsResponse {
 export interface RecentPaymentItem {
   id: number;
   user_id: number;
-  telegram_id: number;
-  username?: string;
+  telegram_id: number | null;
+  email?: string | null;
+  username?: string | null;
   display_name: string;
   amount_kopeks: number;
   amount_rubles: number;
   type: string;
   type_display: string;
-  payment_method?: string;
-  description?: string;
+  payment_method?: string | null;
+  description?: string | null;
   created_at: string;
   is_completed: boolean;
 }
@@ -315,8 +380,6 @@ export interface SystemInfo {
   users_total: number;
   subscriptions_active: number;
 }
-
-// ============ Dashboard Stats API ============
 
 export const statsApi = {
   // Get system info

@@ -1,22 +1,36 @@
 import apiClient from './client';
-import type { AuthResponse, OAuthProvider, RegisterResponse, TokenResponse, User } from '../types';
+import { getYandexCid } from '../utils/yandexCid';
+import type {
+  AuthResponse,
+  LinkCallbackResponse,
+  LinkedProvidersResponse,
+  MergePreviewResponse,
+  MergeResponse,
+  OAuthProvider,
+  RegisterResponse,
+  ServerCompleteResponse,
+  TokenResponse,
+  User,
+  UserAvatarResponse,
+} from '../types';
 
 export const authApi = {
-  // Telegram WebApp authentication
   loginTelegram: async (
     initData: string,
     campaignSlug?: string | null,
     referralCode?: string | null,
+    acceptedLegalDocuments?: string[],
   ): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>('/cabinet/auth/telegram', {
       init_data: initData,
       campaign_slug: campaignSlug || undefined,
       referral_code: referralCode || undefined,
+      yandex_cid: getYandexCid() || undefined,
+      accepted_legal_documents: acceptedLegalDocuments,
     });
     return response.data;
   },
 
-  // Telegram Login Widget authentication
   loginTelegramWidget: async (
     data: {
       id: number;
@@ -29,16 +43,34 @@ export const authApi = {
     },
     campaignSlug?: string | null,
     referralCode?: string | null,
+    acceptedLegalDocuments?: string[],
   ): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>('/cabinet/auth/telegram/widget', {
       ...data,
       campaign_slug: campaignSlug || undefined,
       referral_code: referralCode || undefined,
+      yandex_cid: getYandexCid() || undefined,
+      accepted_legal_documents: acceptedLegalDocuments,
     });
     return response.data;
   },
 
-  // Email login
+  loginTelegramOIDC: async (
+    idToken: string,
+    campaignSlug?: string | null,
+    referralCode?: string | null,
+    acceptedLegalDocuments?: string[],
+  ): Promise<AuthResponse> => {
+    const response = await apiClient.post<AuthResponse>('/cabinet/auth/telegram/oidc', {
+      id_token: idToken,
+      campaign_slug: campaignSlug || undefined,
+      referral_code: referralCode || undefined,
+      yandex_cid: getYandexCid() || undefined,
+      accepted_legal_documents: acceptedLegalDocuments,
+    });
+    return response.data;
+  },
+
   loginEmail: async (
     email: string,
     password: string,
@@ -50,39 +82,55 @@ export const authApi = {
       password,
       campaign_slug: campaignSlug || undefined,
       referral_code: referralCode || undefined,
+      yandex_cid: getYandexCid() || undefined,
     });
     return response.data;
   },
 
-  // Register email (link to existing Telegram account)
   registerEmail: async (
     email: string,
     password: string,
-  ): Promise<{ message: string; email: string }> => {
+  ): Promise<{
+    message: string;
+    email?: string;
+    merge_required?: boolean;
+    // 'email_code' means the email belongs to another account: a confirmation
+    // code was mailed to it and must be verified before a merge token is issued.
+    merge_verification?: 'email_code';
+    merge_token?: string | null;
+  }> => {
     const response = await apiClient.post('/cabinet/auth/email/register', {
       email,
       password,
+      yandex_cid: getYandexCid() || undefined,
     });
     return response.data;
   },
 
-  // Register standalone email account (no Telegram required)
-  // Returns message - user must verify email before login
+  // Confirm an email account merge with the code sent to the existing account.
+  verifyEmailMerge: async (
+    code: string,
+  ): Promise<{ message: string; merge_required?: boolean; merge_token?: string }> => {
+    const response = await apiClient.post('/cabinet/auth/email/merge/verify', { code });
+    return response.data;
+  },
+
   registerEmailStandalone: async (data: {
     email: string;
     password: string;
     first_name?: string;
     language?: string;
     referral_code?: string;
+    campaign_slug?: string;
+    accepted_legal_documents?: string[];
   }): Promise<RegisterResponse> => {
     const response = await apiClient.post<RegisterResponse>(
       '/cabinet/auth/email/register/standalone',
-      data,
+      { ...data, yandex_cid: getYandexCid() || undefined },
     );
     return response.data;
   },
 
-  // Verify email and get auth tokens
   verifyEmail: async (token: string, campaignSlug?: string | null): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>('/cabinet/auth/email/verify', {
       token,
@@ -91,13 +139,23 @@ export const authApi = {
     return response.data;
   },
 
-  // Resend verification email
   resendVerification: async (): Promise<{ message: string }> => {
     const response = await apiClient.post('/cabinet/auth/email/resend');
     return response.data;
   },
 
-  // Refresh token
+  /**
+   * Повторная отправка письма с экрана «Проверьте почту» — до входа в аккаунт.
+   *
+   * Отдельная ручка от resendVerification: та требует токен, которого у только
+   * что зарегистрировавшегося ещё нет. Ответ одинаковый для любого адреса,
+   * поэтому по нему нельзя судить, существует ли аккаунт.
+   */
+  resendVerificationPublic: async (email: string): Promise<{ message: string }> => {
+    const response = await apiClient.post('/cabinet/auth/email/register/resend', { email });
+    return response.data;
+  },
+
   refreshToken: async (refreshToken: string): Promise<TokenResponse> => {
     const response = await apiClient.post<TokenResponse>('/cabinet/auth/refresh', {
       refresh_token: refreshToken,
@@ -105,20 +163,17 @@ export const authApi = {
     return response.data;
   },
 
-  // Logout
   logout: async (refreshToken: string): Promise<void> => {
     await apiClient.post('/cabinet/auth/logout', {
       refresh_token: refreshToken,
     });
   },
 
-  // Forgot password
   forgotPassword: async (email: string): Promise<{ message: string }> => {
     const response = await apiClient.post('/cabinet/auth/password/forgot', { email });
     return response.data;
   },
 
-  // Reset password
   resetPassword: async (token: string, password: string): Promise<{ message: string }> => {
     const response = await apiClient.post('/cabinet/auth/password/reset', {
       token,
@@ -127,13 +182,32 @@ export const authApi = {
     return response.data;
   },
 
-  // Get current user
   getMe: async (): Promise<User> => {
     const response = await apiClient.get<User>('/cabinet/auth/me');
     return response.data;
   },
 
-  // Request email change - sends verification code to new email
+  // Фото профиля Telegram, которое бот берёт у Telegram сам (initData несёт его не всегда).
+  getMyAvatar: async (): Promise<UserAvatarResponse> => {
+    const response = await apiClient.get<UserAvatarResponse>('/cabinet/auth/me/avatar');
+    const photoUrl = response.data.photo_url;
+    if (!photoUrl) return response.data;
+    try {
+      const parsed = new URL(photoUrl, 'https://cabinet.example');
+      const mediaPath = parsed.pathname.match(/(?:^|\/)cabinet\/media\/[^/]+$/)?.[0];
+      if (mediaPath) {
+        return {
+          photo_url: apiClient.getUri({
+            url: `${mediaPath.startsWith('/') ? '' : '/'}${mediaPath}${parsed.search}`,
+          }),
+        };
+      }
+    } catch {
+      // An invalid image URL is handled by the avatar hook's fallback.
+    }
+    return response.data;
+  },
+
   requestEmailChange: async (
     newEmail: string,
   ): Promise<{ message: string; new_email: string; expires_in_minutes: number }> => {
@@ -143,7 +217,6 @@ export const authApi = {
     return response.data;
   },
 
-  // Verify email change with code
   verifyEmailChange: async (code: string): Promise<{ message: string; email: string }> => {
     const response = await apiClient.post('/cabinet/auth/email/change/verify', {
       code,
@@ -151,7 +224,6 @@ export const authApi = {
     return response.data;
   },
 
-  // OAuth: get enabled providers
   getOAuthProviders: async (): Promise<{ providers: OAuthProvider[] }> => {
     const response = await apiClient.get<{ providers: OAuthProvider[] }>(
       '/cabinet/auth/oauth/providers',
@@ -159,7 +231,6 @@ export const authApi = {
     return response.data;
   },
 
-  // OAuth: get authorization URL
   getOAuthAuthorizeUrl: async (
     provider: string,
   ): Promise<{ authorize_url: string; state: string }> => {
@@ -169,11 +240,11 @@ export const authApi = {
     return response.data;
   },
 
-  // OAuth: callback (exchange code for tokens)
   oauthCallback: async (
     provider: string,
     code: string,
     state: string,
+    deviceId?: string | null,
     campaignSlug?: string | null,
     referralCode?: string | null,
   ): Promise<AuthResponse> => {
@@ -182,8 +253,138 @@ export const authApi = {
       {
         code,
         state,
+        device_id: deviceId || undefined,
         campaign_slug: campaignSlug || undefined,
         referral_code: referralCode || undefined,
+        yandex_cid: getYandexCid() || undefined,
+      },
+    );
+    return response.data;
+  },
+
+  getLinkedProviders: async (): Promise<LinkedProvidersResponse> => {
+    const response = await apiClient.get<LinkedProvidersResponse>(
+      '/cabinet/auth/account/linked-providers',
+    );
+    return response.data;
+  },
+
+  linkProviderInit: async (provider: string): Promise<{ authorize_url: string; state: string }> => {
+    const response = await apiClient.get<{ authorize_url: string; state: string }>(
+      `/cabinet/auth/account/link/${encodeURIComponent(provider)}/init`,
+    );
+    return response.data;
+  },
+
+  linkProviderCallback: async (
+    provider: string,
+    code: string,
+    state: string,
+    deviceId?: string,
+  ): Promise<LinkCallbackResponse> => {
+    const response = await apiClient.post<LinkCallbackResponse>(
+      `/cabinet/auth/account/link/${encodeURIComponent(provider)}/callback`,
+      {
+        code,
+        state,
+        device_id: deviceId,
+      },
+    );
+    return response.data;
+  },
+
+  linkTelegram: async (
+    data:
+      | { init_data: string }
+      | { id_token: string }
+      | {
+          id: number;
+          first_name: string;
+          last_name?: string;
+          username?: string;
+          photo_url?: string;
+          auth_date: number;
+          hash: string;
+        },
+  ): Promise<LinkCallbackResponse> => {
+    const response = await apiClient.post<LinkCallbackResponse>(
+      '/cabinet/auth/account/link/telegram',
+      data,
+    );
+    return response.data;
+  },
+
+  linkServerComplete: async (
+    code: string,
+    state: string,
+    deviceId?: string,
+  ): Promise<ServerCompleteResponse> => {
+    const response = await apiClient.post<ServerCompleteResponse>(
+      '/cabinet/auth/account/link/server-complete',
+      {
+        code,
+        state,
+        device_id: deviceId,
+      },
+    );
+    return response.data;
+  },
+
+  unlinkProvider: async (provider: string): Promise<{ success: boolean }> => {
+    const response = await apiClient.post<{ success: boolean }>(
+      `/cabinet/auth/account/unlink/${encodeURIComponent(provider)}`,
+    );
+    return response.data;
+  },
+
+  autoLogin: async (token: string): Promise<AuthResponse> => {
+    const response = await apiClient.post<AuthResponse>('/cabinet/auth/login/auto', { token });
+    return response.data;
+  },
+
+  requestDeepLinkToken: async (): Promise<{
+    token: string;
+    bot_username: string;
+    expires_in: number;
+  }> => {
+    const response = await apiClient.post<{
+      token: string;
+      bot_username: string;
+      expires_in: number;
+    }>('/cabinet/auth/deeplink/request');
+    return response.data;
+  },
+
+  pollDeepLinkToken: async (token: string, campaignSlug?: string | null): Promise<AuthResponse> => {
+    // validateStatus: only treat 200 as success.
+    // Server returns 202 for "pending" and 410 for "expired" —
+    // these must reject so the polling catch-block can handle them.
+    // Without this, axios resolves on 202 (it's 2xx), causing
+    // loginWithDeepLink to set undefined tokens + isAuthenticated=true,
+    // which triggers checkAdminStatus() → 401 → safeRedirectToLogin() → infinite reload.
+    const response = await apiClient.post<AuthResponse>(
+      '/cabinet/auth/deeplink/poll',
+      { token, campaign_slug: campaignSlug || undefined },
+      { validateStatus: (status) => status === 200 },
+    );
+    return response.data;
+  },
+
+  getMergePreview: async (mergeToken: string): Promise<MergePreviewResponse> => {
+    const response = await apiClient.get<MergePreviewResponse>(
+      `/cabinet/auth/merge/${encodeURIComponent(mergeToken)}`,
+    );
+    return response.data;
+  },
+
+  executeMerge: async (
+    mergeToken: string,
+    keepSubscriptionFrom: number,
+  ): Promise<MergeResponse> => {
+    const response = await apiClient.post<MergeResponse>(
+      `/cabinet/auth/merge/${encodeURIComponent(mergeToken)}`,
+      {
+        keep_subscription_from: keepSubscriptionFrom,
       },
     );
     return response.data;

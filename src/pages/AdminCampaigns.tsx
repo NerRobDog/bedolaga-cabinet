@@ -1,11 +1,28 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n';
-import { campaignsApi, CampaignListItem, CampaignBonusType } from '../api/campaigns';
-import { PlusIcon, EditIcon, TrashIcon, CheckIcon, XIcon, ChartIcon } from '../components/icons';
+import { campaignsApi, type CampaignListItem, type CampaignBonusType } from '../api/campaigns';
+import {
+  PlusIcon,
+  EditIcon,
+  TrashIcon,
+  CheckIcon,
+  XIcon,
+  ChartIcon,
+  BackIcon,
+  CampaignIcon,
+  BoltIcon,
+  UserPlusIcon,
+  BanknotesIcon,
+} from '../components/icons';
+import { StatCard } from '../components/stats';
 import { usePlatform } from '../platform/hooks/usePlatform';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+import { Skeleton, SkeletonGroup } from '../components/ui/skeleton';
+
+const PAGE_SIZE = 50;
 
 // Bonus type labels and colors
 const bonusTypeConfig: Record<
@@ -34,19 +51,6 @@ const bonusTypeConfig: Record<
   },
 };
 
-// Icons
-const BackIcon = () => (
-  <svg
-    className="h-5 w-5 text-dark-400"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-  </svg>
-);
-
 // Locale mapping for formatting
 const localeMap: Record<string, string> = { ru: 'ru-RU', en: 'en-US', zh: 'zh-CN', fa: 'fa-IR' };
 
@@ -67,11 +71,25 @@ export default function AdminCampaigns() {
   const { capabilities } = usePlatform();
 
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const deleteDialogRef = useFocusTrap<HTMLDivElement>(deleteConfirm !== null, {
+    onEscape: () => setDeleteConfirm(null),
+  });
 
   // Queries
-  const { data: campaignsData, isLoading } = useQuery({
+  const {
+    data: campaignsData,
+    isLoading,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['admin-campaigns'],
-    queryFn: () => campaignsApi.getCampaigns(true),
+    queryFn: ({ pageParam = 0 }) => campaignsApi.getCampaigns(true, pageParam, PAGE_SIZE),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.campaigns.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
   });
 
   const { data: overview } = useQuery({
@@ -96,7 +114,7 @@ export default function AdminCampaigns() {
     },
   });
 
-  const campaigns = campaignsData?.campaigns || [];
+  const campaigns = campaignsData?.pages.flatMap((p) => p.campaigns) ?? [];
 
   return (
     <div className="animate-fade-in">
@@ -107,7 +125,7 @@ export default function AdminCampaigns() {
           {!capabilities.hasBackButton && (
             <button
               onClick={() => navigate('/admin')}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
             >
               <BackIcon />
             </button>
@@ -119,7 +137,7 @@ export default function AdminCampaigns() {
         </div>
         <button
           onClick={() => navigate('/admin/campaigns/create')}
-          className="flex items-center justify-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-white transition-colors hover:bg-accent-600"
+          className="flex items-center justify-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-on-accent transition-colors hover:bg-accent-600"
         >
           <PlusIcon />
           {t('admin.campaigns.createButton')}
@@ -129,38 +147,38 @@ export default function AdminCampaigns() {
       {/* Overview */}
       {overview && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-xl border border-dark-700 bg-dark-800 p-4">
-            <div className="text-2xl font-bold text-dark-100">{overview.total}</div>
-            <div className="text-sm text-dark-400">
-              {t('admin.campaigns.overview.totalCampaigns')}
-            </div>
-          </div>
-          <div className="rounded-xl border border-dark-700 bg-dark-800 p-4">
-            <div className="text-2xl font-bold text-success-400">{overview.active}</div>
-            <div className="text-sm text-dark-400">{t('admin.campaigns.overview.active')}</div>
-          </div>
-          <div className="rounded-xl border border-dark-700 bg-dark-800 p-4">
-            <div className="text-2xl font-bold text-accent-400">{overview.total_registrations}</div>
-            <div className="text-sm text-dark-400">
-              {t('admin.campaigns.overview.registrations')}
-            </div>
-          </div>
-          <div className="rounded-xl border border-dark-700 bg-dark-800 p-4">
-            <div className="text-2xl font-bold text-success-400">
-              {formatRubles(overview.total_balance_issued_kopeks)}
-            </div>
-            <div className="text-sm text-dark-400">
-              {t('admin.campaigns.overview.bonusesIssued')}
-            </div>
-          </div>
+          <StatCard
+            label={t('admin.campaigns.overview.totalCampaigns')}
+            value={overview.total}
+            icon={<CampaignIcon className="h-5 w-5" />}
+            tone="neutral"
+          />
+          <StatCard
+            label={t('admin.campaigns.overview.active')}
+            value={overview.active}
+            icon={<BoltIcon className="h-5 w-5" />}
+            tone="success"
+          />
+          <StatCard
+            label={t('admin.campaigns.overview.registrations')}
+            value={overview.total_registrations}
+            icon={<UserPlusIcon className="h-5 w-5" />}
+            tone="accent"
+          />
+          <StatCard
+            label={t('admin.campaigns.overview.bonusesIssued')}
+            value={formatRubles(overview.total_balance_issued_kopeks)}
+            icon={<BanknotesIcon className="h-5 w-5" />}
+            tone="success"
+          />
         </div>
       )}
 
       {/* Campaigns List */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-        </div>
+        <SkeletonGroup className="space-y-3">
+          <Skeleton variant="card" count={3} className="h-16" />
+        </SkeletonGroup>
       ) : campaigns.length === 0 ? (
         <div className="py-12 text-center">
           <p className="text-dark-400">{t('admin.campaigns.noData')}</p>
@@ -174,17 +192,22 @@ export default function AdminCampaigns() {
                 campaign.is_active ? 'border-dark-700' : 'border-dark-700/50 opacity-60'
               }`}
             >
-              <div className="flex items-start justify-between gap-4">
+              {/* Как у промокодов: на телефоне название, чипы и кнопки — отдельными
+                  строками. В одну строку с четырьмя кнопками название сжималось до
+                  «Осен…», а чип партнёра налезал на кнопки. */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex items-center gap-2">
-                    <h3 className="truncate font-medium text-dark-100">{campaign.name}</h3>
+                  <h3 className="mb-2 font-medium text-dark-100 [overflow-wrap:anywhere]">
+                    {campaign.name}
+                  </h3>
+                  <div className="mb-2 flex flex-wrap gap-1.5">
                     <span
                       className={`rounded px-2 py-0.5 text-xs ${bonusTypeConfig[campaign.bonus_type].bgColor} ${bonusTypeConfig[campaign.bonus_type].color}`}
                     >
                       {t(bonusTypeConfig[campaign.bonus_type].labelKey)}
                     </span>
                     {campaign.partner_name && (
-                      <span className="rounded bg-purple-500/20 px-2 py-0.5 text-xs text-purple-400">
+                      <span className="max-w-full rounded bg-purple-500/20 px-2 py-0.5 text-xs text-purple-400 [overflow-wrap:anywhere]">
                         {campaign.partner_name}
                       </span>
                     )}
@@ -195,7 +218,9 @@ export default function AdminCampaigns() {
                     )}
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-dark-400">
-                    <span className="font-mono text-xs">?start={campaign.start_parameter}</span>
+                    <span className="w-full font-mono text-xs break-all">
+                      ?start={campaign.start_parameter}
+                    </span>
                     <span>
                       {t('admin.campaigns.table.registrations', {
                         count: campaign.registrations_count,
@@ -212,11 +237,11 @@ export default function AdminCampaigns() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 border-t border-dark-700 pt-3 sm:border-0 sm:pt-0">
                   {/* Stats */}
                   <button
                     onClick={() => navigate(`/admin/campaigns/${campaign.id}/stats`)}
-                    className="rounded-lg bg-dark-700 p-2 text-dark-300 transition-colors hover:bg-dark-600 hover:text-dark-100"
+                    className="flex flex-1 justify-center rounded-lg bg-dark-700 p-2 text-dark-300 transition-colors hover:bg-dark-600 hover:text-dark-100 sm:flex-none"
                     title={t('admin.campaigns.table.statistics')}
                   >
                     <ChartIcon />
@@ -225,7 +250,7 @@ export default function AdminCampaigns() {
                   {/* Toggle Active */}
                   <button
                     onClick={() => toggleMutation.mutate(campaign.id)}
-                    className={`rounded-lg p-2 transition-colors ${
+                    className={`flex flex-1 justify-center rounded-lg p-2 transition-colors sm:flex-none ${
                       campaign.is_active
                         ? 'bg-success-500/20 text-success-400 hover:bg-success-500/30'
                         : 'bg-dark-700 text-dark-400 hover:bg-dark-600'
@@ -242,7 +267,7 @@ export default function AdminCampaigns() {
                   {/* Edit */}
                   <button
                     onClick={() => navigate(`/admin/campaigns/${campaign.id}/edit`)}
-                    className="rounded-lg bg-dark-700 p-2 text-dark-300 transition-colors hover:bg-dark-600 hover:text-dark-100"
+                    className="flex flex-1 justify-center rounded-lg bg-dark-700 p-2 text-dark-300 transition-colors hover:bg-dark-600 hover:text-dark-100 sm:flex-none"
                     title={t('admin.campaigns.table.edit')}
                   >
                     <EditIcon />
@@ -251,7 +276,7 @@ export default function AdminCampaigns() {
                   {/* Delete */}
                   <button
                     onClick={() => setDeleteConfirm(campaign.id)}
-                    className="rounded-lg bg-dark-700 p-2 text-dark-300 transition-colors hover:bg-error-500/20 hover:text-error-400"
+                    className="flex flex-1 justify-center rounded-lg bg-dark-700 p-2 text-dark-300 transition-colors hover:bg-error-500/20 hover:text-error-400 sm:flex-none"
                     title={t('admin.campaigns.table.delete')}
                     disabled={campaign.registrations_count > 0}
                   >
@@ -261,14 +286,41 @@ export default function AdminCampaigns() {
               </div>
             </div>
           ))}
+
+          {/* Load more */}
+          {hasNextPage && (
+            <button
+              onClick={() => fetchNextPage()}
+              disabled={isFetchingNextPage}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dark-700 bg-dark-800 py-3 text-sm font-medium text-dark-300 transition-colors hover:border-dark-600 hover:text-dark-100 disabled:opacity-50"
+            >
+              {isFetchingNextPage ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-dark-500 border-t-accent-500" />
+              ) : (
+                t('admin.campaigns.loadMore', 'Load more')
+              )}
+            </button>
+          )}
         </div>
       )}
 
       {/* Delete Confirmation */}
       {deleteConfirm !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-sm rounded-xl bg-dark-800 p-6">
-            <h3 className="mb-2 text-lg font-semibold text-dark-100">
+          <div
+            className="absolute inset-0 bg-dark-950/60"
+            onClick={() => setDeleteConfirm(null)}
+            aria-hidden="true"
+          />
+          <div
+            ref={deleteDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="campaign-delete-title"
+            tabIndex={-1}
+            className="relative w-full max-w-sm rounded-xl bg-dark-800 p-6"
+          >
+            <h3 id="campaign-delete-title" className="mb-2 text-lg font-semibold text-dark-100">
               {t('admin.campaigns.confirm.deleteTitle')}
             </h3>
             <p className="mb-6 text-dark-400">{t('admin.campaigns.confirm.deleteText')}</p>
