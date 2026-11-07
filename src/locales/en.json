@@ -3911,6 +3911,23 @@
         "normal": "Normal",
         "high": "High",
         "urgent": "Urgent"
+      },
+      "assist": {
+        "title": "Assistant analysis",
+        "noModel": "analysis without a model",
+        "cause": "Likely cause",
+        "ownerAction": "What the owner should do",
+        "askClient": "Ask the client",
+        "draft": "Draft reply",
+        "send": "Send",
+        "edit": "Edit",
+        "sendEdited": "Send edited text",
+        "cancel": "Cancel",
+        "skip": "Skip",
+        "decided": "Decision made",
+        "sendFailed": "Failed to send",
+        "skipFailed": "Failed to skip",
+        "clientForm": "Client form"
       }
     },
     "tariffs": {

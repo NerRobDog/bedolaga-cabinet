@@ -39,6 +39,30 @@ export interface AdminTicket {
   last_message: AdminTicketMessage | null;
 }
 
+export interface AssistFact {
+  icon: string;
+  text: string;
+}
+
+export interface AssistCard {
+  id: number;
+  created_at: string;
+  status: string;
+  decided: boolean;
+  no_model: boolean;
+  facts: AssistFact[];
+  cause: string | null;
+  owner_action: string | null;
+  ask_client: string[];
+  draft: string | null;
+}
+
+export interface TicketAssist {
+  card: AssistCard | null;
+  can_send: boolean;
+  diagnostics: { label: string; value: string }[] | null;
+}
+
 export interface AdminTicketDetail {
   id: number;
   title: string;
@@ -120,6 +144,32 @@ export const adminApi = {
   // Get single ticket with messages
   getTicket: async (ticketId: number): Promise<AdminTicketDetail> => {
     const response = await apiClient.get(`/cabinet/admin/tickets/${ticketId}`);
+    return response.data;
+  },
+
+  // Support assistant card for the ticket
+  getTicketAssist: async (ticketId: number): Promise<TicketAssist> => {
+    const response = await apiClient.get(`/cabinet/admin/tickets/${ticketId}/assist`);
+    return response.data;
+  },
+
+  // Send the assistant draft (or an edited text) to the client
+  sendAssistDraft: async (
+    ticketId: number,
+    cardId: number,
+    text?: string,
+  ): Promise<{ status: string }> => {
+    const response = await apiClient.post(
+      `/cabinet/admin/tickets/${ticketId}/assist/${cardId}/send`,
+      text === undefined ? {} : { text },
+    );
+    return response.data;
+  },
+
+  skipAssist: async (ticketId: number, cardId: number): Promise<{ status: string }> => {
+    const response = await apiClient.post(
+      `/cabinet/admin/tickets/${ticketId}/assist/${cardId}/skip`,
+    );
     return response.data;
   },
 

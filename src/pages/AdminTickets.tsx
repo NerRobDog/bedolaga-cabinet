@@ -21,6 +21,7 @@ import {
   XCircleIcon,
   XIcon,
 } from '@/components/icons';
+import { TicketAssistCard } from '@/components/admin/TicketAssistCard';
 import { StatCard } from '@/components/stats';
 import { Skeleton, SkeletonGroup } from '@/components/ui/skeleton';
 
@@ -535,6 +536,8 @@ export default function AdminTickets() {
                   ))}
                 </div>
               </div>
+
+              <TicketAssistCard ticketId={selectedTicket.id} />
 
               {/* Messages */}
               <div className="scrollbar-hide mb-4 max-h-[400px] flex-1 space-y-4 overflow-y-auto">
